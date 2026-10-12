@@ -1,9 +1,18 @@
 package com.onePilates.agendamento.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.onePilates.agendamento.dto.AgendamentoDTO;
-import com.onePilates.agendamento.model.*;
-import com.onePilates.agendamento.repository.*;
+import com.onePilates.agendamento.agendamento.dto.AgendamentoDTO;
+import com.onePilates.agendamento.agendamento.repository.AgendamentoAlunoRepository;
+import com.onePilates.agendamento.agendamento.repository.AgendamentoRepository;
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
+import com.onePilates.agendamento.ausencia.repository.AusenciaRepository;
+import com.onePilates.agendamento.especialidade.repository.EspecialidadeRepository;
+import com.onePilates.agendamento.model.Aluno;
+import com.onePilates.agendamento.model.Especialidade;
+import com.onePilates.agendamento.model.Professor;
+import com.onePilates.agendamento.model.Sala;
+import com.onePilates.agendamento.professor.repository.ProfessorRepository;
+import com.onePilates.agendamento.sala.repository.SalaRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

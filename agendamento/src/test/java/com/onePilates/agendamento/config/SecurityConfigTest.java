@@ -1,8 +1,8 @@
 package com.onePilates.agendamento.config;
 
-import com.onePilates.agendamento.repository.FuncionarioRepository;
-import com.onePilates.agendamento.security.JwtAuthFilter;
-import com.onePilates.agendamento.security.JwtUtil;
+import com.onePilates.agendamento.auth.security.JwtAuthFilter;
+import com.onePilates.agendamento.auth.security.JwtUtil;
+import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;

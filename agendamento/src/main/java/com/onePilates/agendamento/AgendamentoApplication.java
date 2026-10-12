@@ -1,7 +1,6 @@
 package com.onePilates.agendamento;
 
-import com.onePilates.agendamento.security.SenhaTemp;
-import com.onePilates.agendamento.service.IniciarAplicacaoService;
+import com.onePilates.agendamento.inicializacao.IniciarAplicacaoService;
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.cdimascio.dotenv.DotenvEntry;
 import org.slf4j.Logger;

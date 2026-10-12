@@ -1,5 +1,7 @@
 package com.onePilates.agendamento.model;
 
+import com.onePilates.agendamento.model.enums.DiaSemana;
+
 import jakarta.persistence.*;
 
 import java.time.LocalDate;
