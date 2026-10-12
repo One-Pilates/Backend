@@ -12,8 +12,6 @@ import com.onePilates.agendamento.validator.AgendamentoValidator;
 import jakarta.validation.constraints.Email;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,7 +54,6 @@ public class AgendamentoService {
      * @return Agendamento criado e salvo no banco de dados
      * @throws BusinessException se alguma validação de regra de negócio falhar
      */
-    @CacheEvict(value = "agendamentos", allEntries = true)
     @Transactional
     public Agendamento criarAgendamento(AgendamentoDTO dto) {
         if (dto.getDataHora() != null) {
@@ -102,7 +99,6 @@ public class AgendamentoService {
 
 
 
-    @CacheEvict(value = "agendamentos", allEntries = true)
     @Transactional
     public Agendamento criarAgendamentoAbsoluto(AgendamentoDTO dto) {
         // Normalizar data/hora para hora cheia (zerar minutos, segundos e nanossegundos)
@@ -311,7 +307,6 @@ public class AgendamentoService {
      *
      * @return Lista de todos os agendamentos
      */
-    @Cacheable(value = "agendamentos", key = "'all'")
     public List<AgendamentoResponseDTO> listarTodosDTO() {
         logger.debug("Listando todos os agendamentos");
         List<Agendamento> agendamentos = agendamentoRepository.findAll();
@@ -342,7 +337,6 @@ public class AgendamentoService {
      * @throws EntidadeNaoEncontradaException se o agendamento não for encontrado
      * @throws BusinessException se alguma validação de regra de negócio falhar
      */
-    @CacheEvict(value = "agendamentos", allEntries = true)
     @Transactional
     public AgendamentoResponseDTO atualizarAgendamento(Long agendamentoId, AgendamentoDTO dto) {
         logger.info("Tentativa de atualizar agendamento ID: {}", agendamentoId);
@@ -524,7 +518,6 @@ public class AgendamentoService {
      * @param id ID do agendamento a ser excluído
      * @throws EntidadeNaoEncontradaException se o agendamento não for encontrado
      */
-    @CacheEvict(value = "agendamentos", allEntries = true)
     @Transactional
     public void excluirAgendamento(Long id) {
         logger.info("Tentativa de excluir agendamento ID: {}", id);
@@ -595,7 +588,6 @@ public class AgendamentoService {
      * @throws EntidadeNaoEncontradaException se o agendamento ou aluno não for encontrado
      * @throws OperacaoInvalidaException se tentar registrar presença antes da data/hora do agendamento
      */
-    @CacheEvict(value = "agendamentos", allEntries = true)
     @Transactional
     public void registrarPresencas(Long agendamentoId, Map<Long, StatusPresenca> presencas) {
         logger.info("Tentativa de registrar presenças para agendamento ID: {}", agendamentoId);
@@ -698,7 +690,6 @@ public class AgendamentoService {
         return dto;
     }
 
-    @CacheEvict(value = "agendamentos", allEntries = true)
     @Transactional
     public void atualizarObservacaoAluno(Long agendamentoId, Long alunoId, String observacao) {
         logger.info("Tentativa de atualizar observação do aluno {} no agendamento {}", alunoId, agendamentoId);
