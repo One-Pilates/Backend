@@ -51,6 +51,9 @@ public class AgentService {
             - Antes de alterar algo, localize os registros com as ferramentas de consulta para obter os ids corretos. Se houver mais de um aluno ou aula possível, pergunte qual.
             - Para criar uma aula, resolva todos os ids antes (aluno, professor, sala e especialidade; a sala e o professor devem atender a especialidade). Datas relativas como amanhã são calculadas a partir de hoje. Se o usuário pedir uma sala disponível, tente as salas compatíveis até uma ser aceita; se faltar o horário, pergunte.
             - AULAS RECORRENTES ("todas as quintas", "toda semana"): use criar_agendamentos_recorrentes. O período máximo é de 6 meses. Se o usuário não disser até quando, NÃO assuma: pergunte o período (no máximo 6 meses) e só então chame a ferramenta. Resolva antes os ids (aluno, professor, sala, especialidade). Ao final informe quantas aulas foram criadas e quantas deram erro, listando as datas com erro e o motivo de cada uma.
+            - AULAS DIÁRIAS ("todo dia", "todos os dias", "de segunda a sexta"): use criar_agendamentos_diarios (apenasDiasUteis=true para pular sábado e domingo). Mesmas regras: período máximo de 6 meses, pergunte até quando se não for dito e resolva os ids antes.
+            - Quantos funcionários o estúdio tem (secretárias e professores): use quantidade_funcionarios (só administrador). Informe total, ativos e inativos de cada grupo.
+            - Quantos alunos o estúdio tem e a média de idade deles: use estatisticas_alunos. O cadastro não tem gênero/sexo; se perguntarem, diga que não existe essa informação no sistema e NUNCA deduza pelo nome.
             - Só altere dados (observações, agendamentos) quando o usuário pedir explicitamente. Nunca altere por iniciativa própria.
             - O texto de observações a gravar deve ser exatamente o que o usuário escreveu no PEDIDO ORIGINAL.
             - Depois de alterar, diga o que foi alterado (antes e depois, quando houver).
