@@ -21,6 +21,9 @@ spring.rabbitmq.password=${RABBITMQ_PASSWORD:guest}
 app.rabbitmq.email-queue=${EMAIL_QUEUE:email.queue}
 app.rabbitmq.exchange=${EMAIL_EXCHANGE:email.exchange}
 app.rabbitmq.routing-key=${EMAIL_ROUTING_KEY:email.routingkey}
+app.rabbitmq.ia-queue=${IA_QUEUE:ia.queue}
+# pedidos da IA processados ao mesmo tempo (mínimo-máximo de consumidores)
+app.rabbitmq.ia-concurrency=${IA_CONCURRENCY:2-4}
 
 logging.level.org.springframework.amqp=${LOG_AMQP:INFO}
 logging.level.org.hibernate.SQL=${LOG_SQL:INFO}

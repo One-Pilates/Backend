@@ -1,6 +1,8 @@
 package com.onePilates.agendamento.ia.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -22,9 +24,11 @@ import java.util.regex.Pattern;
 @Component
 public class GroqClient {
 
-    private static final String URL = "https://api.groq.com/openai/v1/chat/completions";
-    private static final int MAX_TENTATIVAS_429 = 2;
-    private static final long ESPERA_MAXIMA_MS = 20_000;
+    private static final Logger log = LoggerFactory.getLogger(GroqClient.class);
+    private static final String URL ="https://api.groq.com/openai/v1/chat/completions";
+    private static final int MAX_TENTATIVAS_429 = 3;
+    /** Soma máxima de espera por chamada à Groq (várias esperas curtas cabem, uma muito longa não). */
+    private static final long ORCAMENTO_ESPERA_MS = 45_000;
     private static final Pattern ESPERA_PATTERN = Pattern.compile("try again in ([0-9.]+)(ms|s)");
 
     @Value("${groq.api.key}")
@@ -56,6 +60,13 @@ public class GroqClient {
         return enviar(messages, tools, temperature, maxTokens);
     }
 
+    @SuppressWarnings("unchecked")
+    private String usoDeTokens(Map<String, Object> responseMap) {
+        Map<String, Object> usage = (Map<String, Object>) responseMap.get("usage");
+        return "entrada=" + usage.get("prompt_tokens") + " saída=" + usage.get("completion_tokens")
+                + " total=" + usage.get("total_tokens");
+    }
+
     /** Lê "Please try again in 14.235s" (ou em ms) da mensagem de erro; se não achar, espera 5 s. */
     private long esperaSugeridaMs(String corpo) {
         Matcher m = ESPERA_PATTERN.matcher(corpo == null ? "" : corpo);
@@ -68,6 +79,9 @@ public class GroqClient {
 
     private Map<String, Object> enviar(List<? extends Map<String, ?>> messages, List<Map<String, Object>> tools,
                                        double temperature, int maxTokens) {
+        long inicioChamada = System.currentTimeMillis();
+        log.info("[IA][groq] Enviando {} mensagem(ns) ao modelo {}{}", messages.size(), model,
+                tools == null || tools.isEmpty() ? "" : " com " + tools.size() + " ferramenta(s)");
         try {
             Map<String, Object> body = new HashMap<>();
             body.put("model", model);
@@ -90,13 +104,20 @@ public class GroqClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             // Limite de tokens por minuto: espera o tempo que a Groq informa e tenta de novo
+            long esperado = 0;
             for (int tentativa = 1; tentativa <= MAX_TENTATIVAS_429 && response.statusCode() == 429; tentativa++) {
                 long espera = esperaSugeridaMs(response.body());
-                if (espera > ESPERA_MAXIMA_MS) {
+                if (esperado + espera > ORCAMENTO_ESPERA_MS) {
                     break;
                 }
+                log.warn("[IA][groq] Limite de tokens por minuto (429). Aguardando {} ms antes da tentativa {}/{}",
+                        espera, tentativa, MAX_TENTATIVAS_429);
                 Thread.sleep(espera);
+                esperado += espera;
                 response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            }
+            if (response.statusCode() == 429) {
+                log.error("[IA][groq] Limite de tokens por minuto persistiu; desistindo (esperou {} ms no total)", esperado);
             }
 
             if (response.statusCode() != 200) {
@@ -104,6 +125,8 @@ public class GroqClient {
             }
 
             Map<String, Object> responseMap = objectMapper.readValue(response.body(), Map.class);
+            log.info("[IA][groq] Resposta em {} ms (modelo {}, tokens: {})",
+                    System.currentTimeMillis() - inicioChamada, model, responseMap.get("usage") == null ? "?" : usoDeTokens(responseMap));
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> choices = (List<Map<String, Object>>) responseMap.get("choices");
@@ -117,6 +140,12 @@ public class GroqClient {
 
             if (message == null) {
                 throw new RuntimeException("Resposta da Groq não contém a mensagem");
+            }
+
+            Object motivoFim = choices.get(0).get("finish_reason");
+            if ("length".equals(motivoFim)) {
+                log.warn("[IA][groq] Resposta cortada por limite de tokens de saída (finish_reason=length); "
+                        + "modelos de raciocínio gastam parte do limite pensando");
             }
 
             return message;

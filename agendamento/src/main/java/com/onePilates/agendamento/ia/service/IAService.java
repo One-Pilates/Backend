@@ -1,69 +1,116 @@
 package com.onePilates.agendamento.ia.service;
 
-import com.onePilates.agendamento.auth.security.JwtUtil;
+import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
+import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
-import com.onePilates.agendamento.ia.client.GroqClient;
+import com.onePilates.agendamento.ia.dto.IARealizacaoDTO;
 import com.onePilates.agendamento.ia.dto.IARequestDTO;
-import com.onePilates.agendamento.ia.dto.IAResponseDTO;
-import com.onePilates.agendamento.ia.tool.ContextoUsuario;
+import com.onePilates.agendamento.ia.dto.IASolicitacaoDTO;
+import com.onePilates.agendamento.ia.messaging.IARealizacaoCriadaEvent;
+import com.onePilates.agendamento.ia.model.IAConversa;
+import com.onePilates.agendamento.ia.model.IARealizacao;
+import com.onePilates.agendamento.ia.model.StatusRealizacao;
+import com.onePilates.agendamento.ia.repository.IAAcaoRepository;
+import com.onePilates.agendamento.ia.repository.IARealizacaoRepository;
 import com.onePilates.agendamento.model.Funcionario;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 
-/** Ponto de entrada: valida o usuário, melhora o prompt e repassa ao {@link AgentService}. */
+/**
+ * Lado síncrono da IA: valida o usuário, registra a realização e a envia para a fila (responde na hora);
+ * e consulta o andamento. Quem executa o agente é o {@link IAProcessador}.
+ */
 @Service
 public class IAService {
 
-    private static final String PROMPT_MELHORAR =
-            "Reescreva o pedido do usuário de forma clara e objetiva, sem mudar o sentido "
-                    + "e sem inventar informações. Mantenha o TIPO do pedido: plano de aula (conteúdo e exercícios) "
-                    + "não é agendamento (marcar data e horário); só use as palavras agendar, marcar ou criar aula "
-                    + "se o usuário as disse. Mantenha nomes e textos exatamente como escritos. "
-                    + "Responda somente com o texto reescrito.";
+    private static final Logger log = LoggerFactory.getLogger(IAService.class);
 
-    private final JwtUtil jwtUtil;
+    /** Realização "em andamento" mais antiga que isso é considerada travada e não bloqueia novos pedidos. */
+    private static final Duration PRAZO_EM_ANDAMENTO = Duration.ofMinutes(5);
+
     private final FuncionarioRepository funcionarioRepository;
-    private final GroqClient groqClient;
-    private final AgentService agentService;
+    private final IARealizacaoRepository realizacaoRepository;
+    private final IAAcaoRepository acaoRepository;
+    private final ConversaService conversaService;
+    private final ApplicationEventPublisher eventos;
 
-    public IAService(JwtUtil jwtUtil, FuncionarioRepository funcionarioRepository,
-                     GroqClient groqClient, AgentService agentService) {
-        this.jwtUtil = jwtUtil;
+    public IAService(FuncionarioRepository funcionarioRepository, IARealizacaoRepository realizacaoRepository,
+                     IAAcaoRepository acaoRepository, ConversaService conversaService,
+                     ApplicationEventPublisher eventos) {
         this.funcionarioRepository = funcionarioRepository;
-        this.groqClient = groqClient;
-        this.agentService = agentService;
+        this.realizacaoRepository = realizacaoRepository;
+        this.acaoRepository = acaoRepository;
+        this.conversaService = conversaService;
+        this.eventos = eventos;
     }
 
-    public IAResponseDTO processar(IARequestDTO dto) {
-        ContextoUsuario usuario = validarUsuario(dto);
-        String promptMelhorado = melhorarPrompt(dto.mensagem());
-        String resposta = agentService.executar(usuario, dto.mensagem(), promptMelhorado);
-        return new IAResponseDTO(dto.usuarioId(), dto.mensagem(), promptMelhorado, resposta, LocalDateTime.now());
-    }
+    @Transactional
+    public IASolicitacaoDTO solicitar(IARequestDTO dto, String emailAutenticado) {
+        log.info("[IA] Pedido recebido: usuarioId={} dataRequisicao={} mensagem=\"{}\"",
+                dto.usuarioId(), dto.dataRequisicao(), resumir(dto.mensagem()));
 
-    /** Garante que o JWT é válido e pertence ao usuarioId informado; devolve quem está pedindo. */
-    private ContextoUsuario validarUsuario(IARequestDTO dto) {
-        String email;
-        try {
-            email = jwtUtil.extractEmail(dto.jwt());
-        } catch (Exception e) {
-            throw new IllegalArgumentException("JWT inválido ou expirado");
+        Funcionario usuario = validarUsuario(dto.usuarioId(), emailAutenticado);
+
+        boolean emAndamento = realizacaoRepository.existsByUsuarioIdAndStatusInAndCriadoEmAfter(
+                usuario.getId(), List.of(StatusRealizacao.PENDENTE, StatusRealizacao.PROCESSANDO),
+                LocalDateTime.now().minus(PRAZO_EM_ANDAMENTO));
+        if (emAndamento) {
+            throw new OperacaoInvalidaException("Você já tem um pedido em andamento. Aguarde a resposta antes de enviar outro.");
         }
+
+        IAConversa conversa = conversaService.obterOuCriar(usuario.getId(), Boolean.TRUE.equals(dto.novaConversa()));
+        IARealizacao realizacao = realizacaoRepository.save(
+                new IARealizacao(usuario.getId(), conversa.getId(), dto.mensagem()));
+
+        // a fila só é acionada depois do commit (ver IAFilaPublisher)
+        eventos.publishEvent(new IARealizacaoCriadaEvent(realizacao.getId()));
+        log.info("[IA] Realização {} registrada para o usuário {} (conversa {})",
+                realizacao.getId(), usuario.getId(), conversa.getId());
+        return new IASolicitacaoDTO(realizacao.getId(), realizacao.getStatus());
+    }
+
+    @Transactional(readOnly = true)
+    public IARealizacaoDTO consultar(Long realizacaoId, String emailAutenticado) {
+        Funcionario usuario = funcionarioRepository.findByEmail(emailAutenticado)
+                .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário do token não encontrado"));
+        // de outro usuário = mesma resposta de "não existe", para não revelar ids alheios
+        IARealizacao r = realizacaoRepository.findById(realizacaoId)
+                .filter(x -> x.getUsuarioId().equals(usuario.getId()))
+                .orElseThrow(() -> new EntidadeNaoEncontradaException("Realização não encontrada"));
+
+        List<IARealizacaoDTO.Acao> acoes = acaoRepository.findByRealizacaoIdOrderByOrdemAsc(r.getId()).stream()
+                .map(a -> new IARealizacaoDTO.Acao(a.getOrdem(), a.getDescricao(), a.getStatus(),
+                        a.getIniciadaEm(), a.getFinalizadaEm()))
+                .toList();
+        return new IARealizacaoDTO(r.getId(), r.getStatus(), r.getMensagem(), r.getPromptMelhorado(),
+                r.getResposta(), r.getErro(), acoes, r.getCriadoEm(), r.getAtualizadoEm());
+    }
+
+    /** Garante que o usuário autenticado (e-mail vindo do JWT do header) é o usuarioId informado. */
+    private Funcionario validarUsuario(Long usuarioId, String email) {
         Funcionario funcionario = funcionarioRepository.findByEmail(email)
-                .orElseThrow(() -> new IllegalArgumentException("Usuário do token não encontrado"));
-        if (!funcionario.getId().equals(dto.usuarioId())) {
+                .orElseThrow(() -> {
+                    log.warn("[IA] Pedido recusado: usuário do token não existe");
+                    return new IllegalArgumentException("Usuário do token não encontrado");
+                });
+        if (!funcionario.getId().equals(usuarioId)) {
+            log.warn("[IA] Pedido recusado: usuarioId {} não pertence ao dono do JWT (id real {})",
+                    usuarioId, funcionario.getId());
             throw new IllegalArgumentException("O usuarioId não corresponde ao dono do JWT");
         }
-        return new ContextoUsuario(funcionario.getId(), funcionario.getNome(), funcionario.getRole());
+        return funcionario;
     }
 
-    private String melhorarPrompt(String mensagem) {
-        return groqClient.chat(List.of(
-                Map.of("role", "system", "content", PROMPT_MELHORAR),
-                Map.of("role", "user", "content", mensagem)
-        ), 0.2, 400);
+    private String resumir(String texto) {
+        if (texto == null) return "null";
+        String limpo = texto.replace("\n", " ").trim();
+        return limpo.length() <= 300 ? limpo : limpo.substring(0, 300) + "...(" + limpo.length() + " caracteres)";
     }
 }

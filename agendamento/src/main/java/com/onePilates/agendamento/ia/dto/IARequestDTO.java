@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 public record IARequestDTO(
         @NotNull Long usuarioId,
         @NotNull LocalDateTime dataRequisicao,
-        @NotBlank String jwt,
-        @NotBlank String mensagem
+        @NotBlank String mensagem,
+        /** Opcional: true descarta a memória da conversa do usuário antes deste pedido. */
+        Boolean novaConversa
 ) {}
