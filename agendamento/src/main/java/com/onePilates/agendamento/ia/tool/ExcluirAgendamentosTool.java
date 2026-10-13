@@ -33,9 +33,13 @@ public class ExcluirAgendamentosTool implements FerramentaIA {
     private final AgendamentoRepository agendamentoRepository;
     private final AgendamentoService agendamentoService;
 
-    public ExcluirAgendamentosTool(AgendamentoRepository agendamentoRepository, AgendamentoService agendamentoService) {
+    private final LeituraTransacional leitura;
+
+    public ExcluirAgendamentosTool(AgendamentoRepository agendamentoRepository, AgendamentoService agendamentoService,
+                                   LeituraTransacional leitura) {
         this.agendamentoRepository = agendamentoRepository;
         this.agendamentoService = agendamentoService;
+        this.leitura = leitura;
     }
 
     @Override
@@ -102,26 +106,32 @@ public class ExcluirAgendamentosTool implements FerramentaIA {
         LocalDateTime ate = dataInicio == null ? agora.plusDays(DIAS_A_FRENTE) : dataFim.plusDays(1).atStartOfDay();
 
         final Long fAgendamento = agendamentoId, fProfessor = professorId, fSala = salaId, fAluno = alunoId;
-        List<Agendamento> alvo = agendamentoRepository.buscarAgendamentosPorIntervalo(de, ate).stream()
-                .filter(a -> fAgendamento == null || a.getId().equals(fAgendamento))
-                .filter(a -> fProfessor == null || (a.getProfessor() != null && a.getProfessor().getId().equals(fProfessor)))
-                .filter(a -> fSala == null || (a.getSala() != null && a.getSala().getId().equals(fSala)))
-                .filter(a -> fAluno == null || a.getAgendamentoAlunos().stream().anyMatch(aa -> aa.getAluno().getId().equals(fAluno)))
-                .sorted(Comparator.comparing(Agendamento::getDataHora))
-                .toList();
+        final LocalDateTime fDe = de, fAte = ate;
+        // a busca lê coleções lazy, então roda em transação de leitura e já devolve dados simples (ids e resumos)
+        Alvo alvo = leitura.ler(() -> {
+            List<Agendamento> encontrados = agendamentoRepository.buscarAgendamentosPorIntervalo(fDe, fAte).stream()
+                    .filter(a -> fAgendamento == null || a.getId().equals(fAgendamento))
+                    .filter(a -> fProfessor == null || (a.getProfessor() != null && a.getProfessor().getId().equals(fProfessor)))
+                    .filter(a -> fSala == null || (a.getSala() != null && a.getSala().getId().equals(fSala)))
+                    .filter(a -> fAluno == null || a.getAgendamentoAlunos().stream().anyMatch(aa -> aa.getAluno().getId().equals(fAluno)))
+                    .sorted(Comparator.comparing(Agendamento::getDataHora))
+                    .toList();
+            return new Alvo(encontrados.stream().map(Agendamento::getId).toList(),
+                    encontrados.stream().map(this::resumo).toList());
+        });
 
-        if (alvo.isEmpty()) {
+        if (alvo.ids().isEmpty()) {
             return Map.of("erro", "Nenhuma aula futura encontrada com esses filtros. Nada foi excluído.");
         }
-        if (alvo.size() > LIMITE_POR_OPERACAO) {
-            return Map.of("erro", "Esses filtros atingem " + alvo.size() + " aulas, acima do limite de "
+        if (alvo.ids().size() > LIMITE_POR_OPERACAO) {
+            return Map.of("erro", "Esses filtros atingem " + alvo.ids().size() + " aulas, acima do limite de "
                     + LIMITE_POR_OPERACAO + " por pedido. Nada foi excluído; peça ao usuário para restringir os filtros.");
         }
 
-        List<Map<String, Object>> previa = alvo.stream().map(this::resumo).toList();
+        List<Map<String, Object>> previa = alvo.resumos();
         boolean confirmadoPeloModelo = Boolean.parseBoolean(String.valueOf(argumentos.get("confirmado")));
         if (!confirmadoPeloModelo || !usuarioConfirmou(usuario.mensagemOriginal())) {
-            return Map.of("previa", true, "total", alvo.size(), "aulas", previa,
+            return Map.of("previa", true, "total", alvo.ids().size(), "aulas", previa,
                     "aviso", "NADA foi excluído. Mostre a lista ao usuário e pergunte se confirma; ele deve responder "
                             + "'sim, confirmo' na próxima mensagem (a conversa anterior fica na memória). "
                             + "Isso envia e-mails de cancelamento e não pode ser desfeito.");
@@ -129,12 +139,13 @@ public class ExcluirAgendamentosTool implements FerramentaIA {
 
         List<Long> excluidas = new ArrayList<>();
         List<Map<String, Object>> falhas = new ArrayList<>();
-        for (Agendamento a : alvo) {
+        // fora de qualquer transação: cada exclusão tem a sua, e uma falha não desfaz as que deram certo
+        for (Long id : alvo.ids()) {
             try {
-                agendamentoService.excluirAgendamento(a.getId());
-                excluidas.add(a.getId());
+                agendamentoService.excluirAgendamento(id);
+                excluidas.add(id);
             } catch (Exception e) {
-                falhas.add(Map.of("id", a.getId(), "erro", String.valueOf(e.getMessage())));
+                falhas.add(Map.of("id", id, "erro", String.valueOf(e.getMessage())));
             }
         }
         return Map.of("sucesso", !excluidas.isEmpty(), "excluidas", excluidas, "falhas", falhas, "aulas", previa);
@@ -152,9 +163,12 @@ public class ExcluirAgendamentosTool implements FerramentaIA {
         return Map.of(
                 "id", a.getId(),
                 "horario", a.getDataHora().toString(),
-                "professor", a.getProfessor() != null ? a.getProfessor().getNome() : "-",
-                "sala", a.getSala() != null ? a.getSala().getNome() : "-",
-                "especialidade", a.getEspecialidade() != null ? a.getEspecialidade().getNome() : "-",
-                "alunos", a.getAgendamentoAlunos().stream().map(aa -> aa.getAluno().getNome()).toList());
+                "professor", a.getProfessor() != null ? ArgumentosTool.texto(a.getProfessor().getNome()) : "-",
+                "sala", a.getSala() != null ? ArgumentosTool.texto(a.getSala().getNome()) : "-",
+                "especialidade", a.getEspecialidade() != null ? ArgumentosTool.texto(a.getEspecialidade().getNome()) : "-",
+                "alunos", a.getAgendamentoAlunos().stream().map(aa -> ArgumentosTool.texto(aa.getAluno().getNome())).toList());
     }
+
+    /** Aulas encontradas pelos filtros, já convertidas em dados simples. */
+    private record Alvo(List<Long> ids, List<Map<String, Object>> resumos) {}
 }

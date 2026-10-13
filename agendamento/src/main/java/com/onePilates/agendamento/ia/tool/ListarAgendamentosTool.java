@@ -3,6 +3,7 @@ package com.onePilates.agendamento.ia.tool;
 import com.onePilates.agendamento.agendamento.repository.AgendamentoRepository;
 import com.onePilates.agendamento.model.Agendamento;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -46,7 +47,9 @@ public class ListarAgendamentosTool implements FerramentaIA {
                 "required", List.of("dataInicio"));
     }
 
+    /** Lê coleções lazy (alunos da aula): sem requisição HTTP não há sessão aberta, então precisa de transação. */
     @Override
+    @Transactional(readOnly = true)
     public Object executar(Map<String, Object> argumentos, ContextoUsuario usuario) {
         LocalDate inicio;
         LocalDate fim;
@@ -78,11 +81,11 @@ public class ListarAgendamentosTool implements FerramentaIA {
                 .map(a -> Map.<String, Object>of(
                         "id", a.getId(),
                         "horario", a.getDataHora().toString(),
-                        "professor", a.getProfessor() != null ? a.getProfessor().getNome() : "-",
-                        "sala", a.getSala() != null ? a.getSala().getNome() : "-",
-                        "especialidade", a.getEspecialidade() != null ? a.getEspecialidade().getNome() : "-",
+                        "professor", a.getProfessor() != null ? ArgumentosTool.texto(a.getProfessor().getNome()) : "-",
+                        "sala", a.getSala() != null ? ArgumentosTool.texto(a.getSala().getNome()) : "-",
+                        "especialidade", a.getEspecialidade() != null ? ArgumentosTool.texto(a.getEspecialidade().getNome()) : "-",
                         "alunos", a.getAgendamentoAlunos().stream()
-                                .map(aa -> Map.<String, Object>of("id", aa.getAluno().getId(), "nome", aa.getAluno().getNome()))
+                                .map(aa -> Map.<String, Object>of("id", aa.getAluno().getId(), "nome", ArgumentosTool.texto(aa.getAluno().getNome())))
                                 .toList()))
                 .toList();
         return Map.of("periodo", inicio + " a " + fim, "total", encontrados.size(),

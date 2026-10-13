@@ -7,6 +7,11 @@ final class ArgumentosTool {
 
     private ArgumentosTool() {}
 
+    /** Map.of não aceita null: nomes ausentes viram "-" em vez de derrubar a ferramenta com NullPointerException. */
+    static String texto(String valor) {
+        return valor == null ? "-" : valor;
+    }
+
     static Long longOpcional(Map<String, Object> args, String chave) {
         Object v = args.get(chave);
         if (v == null || v.toString().isBlank()) return null;

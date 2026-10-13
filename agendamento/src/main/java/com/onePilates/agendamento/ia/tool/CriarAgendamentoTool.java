@@ -1,6 +1,7 @@
 package com.onePilates.agendamento.ia.tool;
 
 import com.onePilates.agendamento.agendamento.dto.AgendamentoDTO;
+import com.onePilates.agendamento.agendamento.repository.AgendamentoRepository;
 import com.onePilates.agendamento.agendamento.service.AgendamentoService;
 import com.onePilates.agendamento.model.Agendamento;
 import com.onePilates.agendamento.model.enums.Role;
@@ -17,9 +18,14 @@ import java.util.Set;
 public class CriarAgendamentoTool implements FerramentaIA {
 
     private final AgendamentoService agendamentoService;
+    private final AgendamentoRepository agendamentoRepository;
+    private final LeituraTransacional leitura;
 
-    public CriarAgendamentoTool(AgendamentoService agendamentoService) {
+    public CriarAgendamentoTool(AgendamentoService agendamentoService, AgendamentoRepository agendamentoRepository,
+                                LeituraTransacional leitura) {
         this.agendamentoService = agendamentoService;
+        this.agendamentoRepository = agendamentoRepository;
+        this.leitura = leitura;
     }
 
     @Override
@@ -75,14 +81,19 @@ public class CriarAgendamentoTool implements FerramentaIA {
         }
         dto.setAlunoIds(alunoIds);
 
-        Agendamento criado = agendamentoService.criarAgendamento(dto);
-        return Map.of(
-                "sucesso", true,
-                "agendamentoId", criado.getId(),
-                "horario", criado.getDataHora().toString(),
-                "professor", criado.getProfessor().getNome(),
-                "sala", criado.getSala().getNome(),
-                "especialidade", criado.getEspecialidade().getNome(),
-                "alunos", criado.getAgendamentoAlunos().stream().map(aa -> aa.getAluno().getNome()).toList());
+        Long criadoId = agendamentoService.criarAgendamento(dto).getId();
+        // a transação do service já terminou: recarrega em leitura para ler os alunos (coleção lazy) com segurança
+        return leitura.ler(() -> {
+            Agendamento criado = agendamentoRepository.findById(criadoId).orElseThrow();
+            return Map.<String, Object>of(
+                    "sucesso", true,
+                    "agendamentoId", criado.getId(),
+                    "horario", criado.getDataHora().toString(),
+                    "professor", ArgumentosTool.texto(criado.getProfessor().getNome()),
+                    "sala", ArgumentosTool.texto(criado.getSala().getNome()),
+                    "especialidade", ArgumentosTool.texto(criado.getEspecialidade().getNome()),
+                    "alunos", criado.getAgendamentoAlunos().stream()
+                            .map(aa -> ArgumentosTool.texto(aa.getAluno().getNome())).toList());
+        });
     }
 }

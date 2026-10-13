@@ -3,6 +3,7 @@ package com.onePilates.agendamento.ia.tool;
 import com.onePilates.agendamento.professor.repository.ProfessorRepository;
 import com.onePilates.agendamento.sala.repository.SalaRepository;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -29,17 +30,19 @@ public class ListarProfessoresESalasTool implements FerramentaIA {
         return Map.of("type", "object", "properties", Map.of());
     }
 
+    /** Lê coleções lazy (especialidades): sem requisição HTTP não há sessão aberta, então precisa de transação. */
     @Override
+    @Transactional(readOnly = true)
     public Object executar(Map<String, Object> argumentos, ContextoUsuario usuario) {
         List<Map<String, Object>> professores = professorRepository.findAll().stream()
-                .map(p -> Map.<String, Object>of("id", p.getId(), "nome", p.getNome(),
+                .map(p -> Map.<String, Object>of("id", p.getId(), "nome", ArgumentosTool.texto(p.getNome()),
                         "especialidades", p.getEspecialidades().stream()
-                                .map(e -> Map.<String, Object>of("id", e.getId(), "nome", e.getNome())).toList()))
+                                .map(e -> Map.<String, Object>of("id", e.getId(), "nome", ArgumentosTool.texto(e.getNome()))).toList()))
                 .toList();
         List<Map<String, Object>> salas = salaRepository.findAll().stream()
-                .map(s -> Map.<String, Object>of("id", s.getId(), "nome", s.getNome(),
+                .map(s -> Map.<String, Object>of("id", s.getId(), "nome", ArgumentosTool.texto(s.getNome()),
                         "especialidades", s.getEspecialidades().stream()
-                                .map(e -> Map.<String, Object>of("id", e.getId(), "nome", e.getNome())).toList()))
+                                .map(e -> Map.<String, Object>of("id", e.getId(), "nome", ArgumentosTool.texto(e.getNome()))).toList()))
                 .toList();
         return Map.of("professores", professores, "salas", salas);
     }

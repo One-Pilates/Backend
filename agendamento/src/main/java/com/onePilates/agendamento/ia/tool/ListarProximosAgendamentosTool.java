@@ -3,6 +3,7 @@ package com.onePilates.agendamento.ia.tool;
 import com.onePilates.agendamento.agendamento.repository.AgendamentoRepository;
 import com.onePilates.agendamento.model.Agendamento;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -43,7 +44,9 @@ public class ListarProximosAgendamentosTool implements FerramentaIA {
                 "required", List.of());
     }
 
+    /** Lê coleções lazy (alunos da aula): sem requisição HTTP não há sessão aberta, então precisa de transação. */
     @Override
+    @Transactional(readOnly = true)
     public Object executar(Map<String, Object> argumentos, ContextoUsuario usuario) {
         Long alunoId = ArgumentosTool.longOpcional(argumentos, "alunoId");
         Long professorId = ArgumentosTool.longOpcional(argumentos, "professorId");
@@ -66,10 +69,10 @@ public class ListarProximosAgendamentosTool implements FerramentaIA {
                 .map(a -> Map.<String, Object>of(
                         "id", a.getId(),
                         "horario", a.getDataHora().toString(),
-                        "professor", a.getProfessor() != null ? a.getProfessor().getNome() : "-",
-                        "sala", a.getSala() != null ? a.getSala().getNome() : "-",
-                        "especialidade", a.getEspecialidade() != null ? a.getEspecialidade().getNome() : "-",
-                        "alunos", a.getAgendamentoAlunos().stream().map(aa -> aa.getAluno().getNome()).toList()))
+                        "professor", a.getProfessor() != null ? ArgumentosTool.texto(a.getProfessor().getNome()) : "-",
+                        "sala", a.getSala() != null ? ArgumentosTool.texto(a.getSala().getNome()) : "-",
+                        "especialidade", a.getEspecialidade() != null ? ArgumentosTool.texto(a.getEspecialidade().getNome()) : "-",
+                        "alunos", a.getAgendamentoAlunos().stream().map(aa -> ArgumentosTool.texto(aa.getAluno().getNome())).toList()))
                 .toList();
         return Map.of("proximasAulas", aulas, "totalNosProximos" + DIAS_A_FRENTE + "Dias", todos.size());
     }
