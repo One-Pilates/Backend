@@ -15,6 +15,7 @@ final class DescricaoAcoes {
             Map.entry("atualizar_observacao_aluno", "Atualizando a observação do aluno"),
             Map.entry("atualizar_observacao_aula_aluno", "Atualizando a observação da aula"),
             Map.entry("criar_agendamento", "Criando o agendamento"),
+            Map.entry("criar_agendamentos_recorrentes", "Criando os agendamentos recorrentes"),
             Map.entry("editar_agendamento", "Editando o agendamento"),
             Map.entry("excluir_agendamentos", "Preparando/excluindo aulas"),
             Map.entry("minhas_ausencias", "Consultando as ausências"),
