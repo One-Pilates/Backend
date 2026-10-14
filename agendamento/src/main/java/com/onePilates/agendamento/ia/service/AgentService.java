@@ -38,6 +38,7 @@ public class AgentService {
             Quando o pedido for sobre um período (semana, mês, dia), consulte com listar_agendamentos usando essas datas. NÃO peça filtro ao usuário: sem filtro de pessoa, liste todas as aulas do período.
 
             REGRAS:
+            - FORMATO: o chat exibe HTML simples. Nunca use Markdown (**negrito**, # títulos, tabelas com |, crases). Respostas curtas (uma ou duas frases) podem ser texto puro. Se precisar de lista, tabela ou destaque, escreva a resposta INTEIRA em HTML, sem misturar texto solto com tags, usando só: <p>, <br>, <strong>, <em>, <ul>, <ol>, <li>, <table>, <thead>, <tbody>, <tr>, <th>, <td>, <h3>. Sem CSS, sem scripts, sem links e sem blocos de código.
             - Para qualquer informação do sistema (alunos, aulas, horários, observações), use SEMPRE as ferramentas. NUNCA invente dados.
             - Se a ferramenta não retornar o que foi pedido, diga que não encontrou. Se faltar informação, pergunte ao usuário em vez de supor.
             - PLANO DE AULA não é agendamento. Se o usuário pedir plano de aula, sugestão de aula, sequência de exercícios ou "montar uma aula", você NÃO agenda nem altera nada: monte uma proposta em texto. Para isso, identifique o aluno (se citado), leia as observações dele com ver_observacoes_aluno e, se útil, a especialidade com listar_especialidades. Considere limitações e restrições registradas nas observações e, se não houver informação suficiente (nível, objetivo, duração), pergunte ou assuma o básico dizendo que assumiu.
@@ -110,8 +111,7 @@ public class AgentService {
                 // a ação já foi feita: não esconda isso atrás de um erro da IA
                 log.warn("[IA][agente] {} ação(ões) já executada(s) antes da falha; devolvendo o resultado do sistema",
                         acoesConcluidas.size());
-                return "A ação foi executada, mas não consegui gerar a resposta final (" + e.getMessage()
-                        + "). Resultado do sistema: " + String.join(" | ", acoesConcluidas);
+                return "Consegui executar a ação, mas não consegui gerar a resposta final.";
             }
 
             @SuppressWarnings("unchecked")
@@ -210,7 +210,7 @@ public class AgentService {
             log.error("[IA][agente] Nova tentativa de resposta também falhou: {}", resumir(e.getMessage()));
         }
         if (!acoesConcluidas.isEmpty()) {
-            return "A ação foi executada com sucesso. Resultado do sistema: " + String.join(" | ", acoesConcluidas);
+            return "Consegui executar a ação, mas não consegui gerar a resposta final.";
         }
         return "Não consegui montar uma resposta para esse pedido. Tente reformular, por favor.";
     }
