@@ -11,7 +11,7 @@ spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.MySQL8Dialect
 spring.jpa.properties.hibernate.jdbc.time_zone=${TIMEZONE:America/Sao_Paulo}
 
 app.jwt.secret=${JWT_SECRET:default_secret}
-app.jwt.expiration-ms=${JWT_EXPIRATION:2592000000}
+app.jwt.expiration-ms=${JWT_EXPIRATION:86400000}
 
 spring.rabbitmq.host=${RABBITMQ_HOST:localhost}
 spring.rabbitmq.port=${RABBITMQ_PORT:5672}
