@@ -1,5 +1,7 @@
 package com.onePilates.agendamento.model;
 
+import com.onePilates.agendamento.model.enums.Role;
+
 import jakarta.persistence.Entity;
 
 import java.time.LocalDate;

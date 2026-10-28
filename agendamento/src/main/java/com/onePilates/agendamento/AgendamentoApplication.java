@@ -1,7 +1,6 @@
 package com.onePilates.agendamento;
 
-import com.onePilates.agendamento.security.SenhaTemp;
-import com.onePilates.agendamento.service.IniciarAplicacaoService;
+import com.onePilates.agendamento.inicializacao.IniciarAplicacaoService;
 import io.github.cdimascio.dotenv.Dotenv;
 import io.github.cdimascio.dotenv.DotenvEntry;
 import org.slf4j.Logger;
@@ -16,9 +15,16 @@ public class AgendamentoApplication {
     private static final Logger log =
             LoggerFactory.getLogger(AgendamentoApplication.class);
 
-    private static final Dotenv DOTENV = Dotenv.configure()
-            .ignoreIfMissing()
-            .load();
+    private static final Dotenv DOTENV = carregarDotenv();
+
+    // O .env fica em agendamento/; aceita execução a partir dessa pasta ou da raiz do repositório
+    private static Dotenv carregarDotenv() {
+        String diretorio = new java.io.File(".env").exists() ? "./" : "./agendamento";
+        return Dotenv.configure()
+                .directory(diretorio)
+                .ignoreIfMissing()
+                .load();
+    }
 
     public static void main(String[] args) {
 
