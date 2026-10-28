@@ -20,6 +20,7 @@ final class DescricaoAcoes {
             Map.entry("estatisticas_alunos", "Calculando as estatísticas dos alunos"),
             Map.entry("quantidade_funcionarios", "Contando os funcionários"),
             Map.entry("editar_agendamento", "Editando o agendamento"),
+            Map.entry("atualizar_aula", "Atualizando a aula"),
             Map.entry("excluir_agendamentos", "Preparando/excluindo aulas"),
             Map.entry("minhas_ausencias", "Consultando as ausências"),
             Map.entry("dashboard_geral", "Montando o dashboard geral"),

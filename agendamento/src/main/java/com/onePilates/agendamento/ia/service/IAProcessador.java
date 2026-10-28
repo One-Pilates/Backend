@@ -110,6 +110,13 @@ public class IAProcessador {
 
         String resposta = agentService.executar(usuario, realizacao.getMensagem(), promptMelhorado, historico, progresso);
 
+        // se um novo pedido do usuário cancelou esta realização enquanto o agente rodava, não sobrescreve
+        StatusRealizacao atual = realizacaoRepository.findById(realizacao.getId())
+                .map(IARealizacao::getStatus).orElse(StatusRealizacao.ERRO);
+        if (atual != StatusRealizacao.PROCESSANDO) {
+            log.warn("[IA][worker] Realização {} foi cancelada durante o processamento; resposta descartada", realizacao.getId());
+            return;
+        }
         realizacao.concluir(resposta);
         realizacaoRepository.save(realizacao);
         conversaService.renovar(realizacao.getConversaId());

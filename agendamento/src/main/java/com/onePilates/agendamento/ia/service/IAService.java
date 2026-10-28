@@ -1,7 +1,6 @@
 package com.onePilates.agendamento.ia.service;
 
 import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
-import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
 import com.onePilates.agendamento.ia.dto.IARealizacaoDTO;
 import com.onePilates.agendamento.ia.dto.IARequestDTO;
@@ -19,8 +18,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
-import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -31,9 +28,6 @@ import java.util.List;
 public class IAService {
 
     private static final Logger log = LoggerFactory.getLogger(IAService.class);
-
-    /** Realização "em andamento" mais antiga que isso é considerada travada e não bloqueia novos pedidos. */
-    private static final Duration PRAZO_EM_ANDAMENTO = Duration.ofMinutes(5);
 
     private final FuncionarioRepository funcionarioRepository;
     private final IARealizacaoRepository realizacaoRepository;
@@ -58,11 +52,14 @@ public class IAService {
 
         Funcionario usuario = validarUsuario(dto.usuarioId(), emailAutenticado);
 
-        boolean emAndamento = realizacaoRepository.existsByUsuarioIdAndStatusInAndCriadoEmAfter(
-                usuario.getId(), List.of(StatusRealizacao.PENDENTE, StatusRealizacao.PROCESSANDO),
-                LocalDateTime.now().minus(PRAZO_EM_ANDAMENTO));
-        if (emAndamento) {
-            throw new OperacaoInvalidaException("Você já tem um pedido em andamento. Aguarde a resposta antes de enviar outro.");
+        // pedido anterior preso (erro, timeout do front, worker caído) não pode travar o usuário:
+        // o novo pedido vence e os anteriores em andamento são cancelados
+        for (IARealizacao anterior : realizacaoRepository.findByUsuarioIdAndStatusIn(
+                usuario.getId(), List.of(StatusRealizacao.PENDENTE, StatusRealizacao.PROCESSANDO))) {
+            anterior.falhar("Cancelado: um novo pedido foi enviado.");
+            realizacaoRepository.save(anterior);
+            log.warn("[IA] Realização {} em andamento cancelada por novo pedido do usuário {}",
+                    anterior.getId(), usuario.getId());
         }
 
         IAConversa conversa = conversaService.obterOuCriar(usuario.getId(), Boolean.TRUE.equals(dto.novaConversa()));
