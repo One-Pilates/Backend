@@ -10,3 +10,4 @@ public record IAConversaDetalheDTO(
         LocalDateTime ultimoUso,
         List<IARealizacaoDTO> mensagens
 ) {}
+

@@ -9,3 +9,4 @@ public record IAConversaResumoDTO(
         LocalDateTime ultimoUso,
         int totalMensagens
 ) {}
+
