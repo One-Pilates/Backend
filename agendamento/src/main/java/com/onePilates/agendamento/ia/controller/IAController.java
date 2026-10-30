@@ -2,6 +2,8 @@ package com.onePilates.agendamento.ia.controller;
 
 import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
 import com.onePilates.agendamento.exception.OperacaoInvalidaException;
+import com.onePilates.agendamento.ia.dto.IAConversaDetalheDTO;
+import com.onePilates.agendamento.ia.dto.IAConversaResumoDTO;
 import com.onePilates.agendamento.ia.dto.IARealizacaoDTO;
 import com.onePilates.agendamento.ia.dto.IARequestDTO;
 import com.onePilates.agendamento.ia.dto.IASolicitacaoDTO;
@@ -11,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -44,16 +48,17 @@ public class IAController {
 
     /**
      * Recebe um áudio gravado ou enviado pelo usuário, realiza a transcrição no backend e encaminha
-     * diretamente para o modelo de IA, retornando 202 com realizacaoId, status e textoTranscrito.
+     * diretamente para o modelo de IA, retornando 202 com realizacaoId, status, textoTranscrito e conversaId.
      */
     @PostMapping(value = "/agente/audio", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<IASolicitacaoDTO> agentePorAudio(
             @RequestParam("audio") MultipartFile audio,
             @RequestParam("usuarioId") Long usuarioId,
             @RequestParam(value = "novaConversa", required = false, defaultValue = "false") Boolean novaConversa,
+            @RequestParam(value = "conversaId", required = false) Long conversaId,
             Authentication authentication) {
         return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body(iaService.solicitarPorAudio(usuarioId, audio, novaConversa, authentication.getName()));
+                .body(iaService.solicitarPorAudio(usuarioId, audio, novaConversa, conversaId, authentication.getName()));
     }
 
     /** Endpoint auxiliar de transcrição direta de áudio para texto. */
@@ -67,6 +72,27 @@ public class IAController {
     @GetMapping("/realizacoes/{id}")
     public ResponseEntity<IARealizacaoDTO> consultar(@PathVariable Long id, Authentication authentication) {
         return ResponseEntity.ok(iaService.consultar(id, authentication.getName()));
+    }
+
+    /** Lista o histórico de conversas do usuário autenticado. */
+    @GetMapping("/conversas")
+    public ResponseEntity<List<IAConversaResumoDTO>> listarConversas(Authentication authentication) {
+        return ResponseEntity.ok(iaService.listarConversas(authentication.getName()));
+    }
+
+    /** Obtém todas as mensagens e etapas de uma conversa específica do histórico. */
+    @GetMapping("/conversas/{conversaId}")
+    public ResponseEntity<IAConversaDetalheDTO> obterConversa(@PathVariable Long conversaId,
+                                                              Authentication authentication) {
+        return ResponseEntity.ok(iaService.obterConversa(conversaId, authentication.getName()));
+    }
+
+    /** Exclui uma conversa específica do histórico do usuário. */
+    @DeleteMapping("/conversas/{conversaId}")
+    public ResponseEntity<Map<String, Object>> excluirConversa(@PathVariable Long conversaId,
+                                                               Authentication authentication) {
+        iaService.excluirConversa(conversaId, authentication.getName());
+        return ResponseEntity.ok(Map.of("sucesso", true, "conversaExcluida", conversaId));
     }
 
     @ExceptionHandler({IllegalArgumentException.class, OperacaoInvalidaException.class})
