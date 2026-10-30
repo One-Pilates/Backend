@@ -27,6 +27,8 @@ public class EditarAgendamentoTool implements FerramentaIA {
     @Override
     public String descricao() {
         return "Edita uma aula agendada: muda horário, professor, sala ou especialidade. Informe só o que muda. "
+                + "REGRAS DE NEGÓCIO: aulas só podem ser movidas para dias úteis (segunda a sexta-feira, proibido sábado e domingo), "
+                + "em horas cheias das 08:00 às 19:00, nunca para o passado. "
                 + "Só use quando o usuário pedir explicitamente e depois de confirmar os ids com as tools de consulta. "
                 + "As regras de conflito do sistema são aplicadas e podem recusar a mudança.";
     }
@@ -41,7 +43,8 @@ public class EditarAgendamentoTool implements FerramentaIA {
                 "type", "object",
                 "properties", Map.of(
                         "agendamentoId", Map.of("type", "integer"),
-                        "dataHora", Map.of("type", "string", "description", "Novo horário AAAA-MM-DDTHH:MM"),
+                        "dataHora", Map.of("type", "string",
+                                "description", "Novo horário AAAA-MM-DDTHH:00 (segunda a sexta, das 08:00 às 19:00)"),
                         "professorId", Map.of("type", "integer"),
                         "salaId", Map.of("type", "integer"),
                         "especialidadeId", Map.of("type", "integer")),
@@ -51,10 +54,19 @@ public class EditarAgendamentoTool implements FerramentaIA {
     @Override
     public Object executar(Map<String, Object> argumentos, ContextoUsuario usuario) {
         Long id = ArgumentosTool.longObrigatorio(argumentos, "agendamentoId");
+        String erroId = GuardrailsNegocioIA.validarIdPositivo(id, "agendamento");
+        if (erroId != null) {
+            return Map.of("erro", erroId);
+        }
+
         AgendamentoDTO dto = new AgendamentoDTO();
         try {
             if (argumentos.get("dataHora") != null) {
                 dto.setDataHora(LocalDateTime.parse(String.valueOf(argumentos.get("dataHora"))));
+                String erroDataHora = GuardrailsNegocioIA.validarDataHoraAula(dto.getDataHora());
+                if (erroDataHora != null) {
+                    return Map.of("erro", erroDataHora);
+                }
             }
         } catch (DateTimeParseException e) {
             return Map.of("erro", "dataHora inválida, use AAAA-MM-DDTHH:MM");

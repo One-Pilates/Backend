@@ -34,6 +34,8 @@ public class CriarAgendamentoTool implements FerramentaIA {
     @Override
     public String descricao() {
         return "Marca (agenda) uma aula no calendário com professor, sala, especialidade, horário e alunos. "
+                + "REGRAS DE NEGÓCIO OBRIGATÓRIAS: aulas só podem ocorrer de segunda a sexta-feira (PROIBIDO sábado e domingo), "
+                + "em horas cheias das 08:00 às 19:00, nunca no passado e com no máximo 1 ano de antecedência. "
                 + "NÃO use para plano de aula, sugestão de exercícios ou montar o conteúdo de uma aula. "
                 + "Só use quando o usuário pedir explicitamente. Descubra antes todos os ids com as tools de consulta "
                 + "(buscar_alunos, listar_professores_e_salas, listar_especialidades). A sala e o professor devem atender "
@@ -50,7 +52,8 @@ public class CriarAgendamentoTool implements FerramentaIA {
         return Map.of(
                 "type", "object",
                 "properties", Map.of(
-                        "dataHora", Map.of("type", "string", "description", "Horário AAAA-MM-DDTHH:MM"),
+                        "dataHora", Map.of("type", "string",
+                                "description", "Horário AAAA-MM-DDTHH:00 (segunda a sexta, das 08:00 às 19:00)"),
                         "professorId", Map.of("type", "integer"),
                         "salaId", Map.of("type", "integer"),
                         "especialidadeId", Map.of("type", "integer"),
@@ -66,9 +69,25 @@ public class CriarAgendamentoTool implements FerramentaIA {
         } catch (DateTimeParseException e) {
             return Map.of("erro", "dataHora inválida, use AAAA-MM-DDTHH:MM");
         }
+
+        String erroDataHora = GuardrailsNegocioIA.validarDataHoraAula(dto.getDataHora());
+        if (erroDataHora != null) {
+            return Map.of("erro", erroDataHora);
+        }
+
         dto.setProfessorId(ArgumentosTool.longObrigatorio(argumentos, "professorId"));
         dto.setSalaId(ArgumentosTool.longObrigatorio(argumentos, "salaId"));
         dto.setEspecialidadeId(ArgumentosTool.longObrigatorio(argumentos, "especialidadeId"));
+
+        for (Map.Entry<String, Long> idEntry : List.of(
+                Map.entry("professor", dto.getProfessorId()),
+                Map.entry("sala", dto.getSalaId()),
+                Map.entry("especialidade", dto.getEspecialidadeId()))) {
+            String erroId = GuardrailsNegocioIA.validarIdPositivo(idEntry.getValue(), idEntry.getKey());
+            if (erroId != null) {
+                return Map.of("erro", erroId);
+            }
+        }
 
         Set<Long> alunoIds = new HashSet<>();
         if (argumentos.get("alunoIds") instanceof List<?> lista) {
@@ -76,8 +95,9 @@ public class CriarAgendamentoTool implements FerramentaIA {
                 alunoIds.add(item instanceof Number n ? n.longValue() : Long.parseLong(String.valueOf(item).trim()));
             }
         }
-        if (alunoIds.isEmpty()) {
-            return Map.of("erro", "Informe ao menos um aluno");
+        String erroAlunos = GuardrailsNegocioIA.validarListaAlunos(alunoIds);
+        if (erroAlunos != null) {
+            return Map.of("erro", erroAlunos);
         }
         dto.setAlunoIds(alunoIds);
 

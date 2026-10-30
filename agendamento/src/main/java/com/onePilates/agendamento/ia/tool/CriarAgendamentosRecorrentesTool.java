@@ -41,11 +41,12 @@ public class CriarAgendamentosRecorrentesTool implements FerramentaIA {
 
     @Override
     public String descricao() {
-        return "Agenda a mesma aula toda semana em um dia da semana fixo (ex.: 'todas as quintas às 10h') dentro de um "
-                + "período de NO MÁXIMO 6 meses, com professor, sala, especialidade e alunos. Cada data é criada em separado: "
-                + "as que o sistema recusar não impedem as outras e voltam em 'falhas' com o motivo. Se o usuário pedir "
-                + "recorrência e NÃO informar até quando, pergunte o período (máximo 6 meses) antes de chamar; nunca "
-                + "assuma o período. Descubra antes todos os ids com as tools de consulta (buscar_alunos, "
+        return "Agenda a mesma aula toda semana em um dia útil fixo (SEGUNDA a SEXTA, ex.: 'todas as quintas às 10h') "
+                + "dentro de um período de NO MÁXIMO 6 meses, com professor, sala, especialidade e alunos. "
+                + "PROIBIDO agendar aos sábados ou domingos. O horário deve ser hora cheia entre 08:00 e 19:00. "
+                + "Cada data é criada em separado: as que o sistema recusar não impedem as outras e voltam em 'falhas' com o motivo. "
+                + "Se o usuário pedir recorrência e NÃO informar até quando, pergunte o período (máximo 6 meses) antes de chamar; "
+                + "nunca assuma o período. Descubra antes todos os ids com as tools de consulta (buscar_alunos, "
                 + "listar_professores_e_salas, listar_especialidades). Para uma aula única use criar_agendamento.";
     }
 
@@ -59,8 +60,9 @@ public class CriarAgendamentosRecorrentesTool implements FerramentaIA {
                 "type", "object",
                 "properties", Map.of(
                         "diaSemana", Map.of("type", "string",
-                                "description", "SEGUNDA, TERCA, QUARTA, QUINTA, SEXTA, SABADO ou DOMINGO"),
-                        "horario", Map.of("type", "string", "description", "Horário HH:MM, ex.: 10:00"),
+                                "description", "SEGUNDA, TERCA, QUARTA, QUINTA ou SEXTA (proibido SABADO e DOMINGO)"),
+                        "horario", Map.of("type", "string",
+                                "description", "Horário em hora cheia HH:00 entre 08:00 e 19:00, ex.: 10:00"),
                         "dataInicio", Map.of("type", "string",
                                 "description", "AAAA-MM-DD; a primeira aula é a primeira ocorrência do dia da semana a partir desta data"),
                         "dataFim", Map.of("type", "string",
@@ -77,8 +79,13 @@ public class CriarAgendamentosRecorrentesTool implements FerramentaIA {
     public Object executar(Map<String, Object> argumentos, ContextoUsuario usuario) {
         DayOfWeek dia = lerDiaSemana(argumentos.get("diaSemana"));
         if (dia == null) {
-            return Map.of("erro", "diaSemana inválido; use SEGUNDA, TERCA, QUARTA, QUINTA, SEXTA, SABADO ou DOMINGO");
+            return Map.of("erro", "diaSemana inválido; use SEGUNDA, TERCA, QUARTA, QUINTA ou SEXTA");
         }
+        String erroDia = GuardrailsNegocioIA.validarDiaSemanaFuncionamento(dia);
+        if (erroDia != null) {
+            return Map.of("erro", erroDia);
+        }
+
         LocalTime horario;
         LocalDate inicio;
         LocalDate fim;
@@ -89,6 +96,12 @@ public class CriarAgendamentosRecorrentesTool implements FerramentaIA {
         } catch (DateTimeParseException e) {
             return Map.of("erro", "horario deve ser HH:MM e as datas AAAA-MM-DD");
         }
+
+        String erroHorario = GuardrailsNegocioIA.validarHorarioExpediente(horario);
+        if (erroHorario != null) {
+            return Map.of("erro", erroHorario);
+        }
+
         if (fim.isBefore(inicio)) {
             return Map.of("erro", "A data de fim não pode ser anterior à de início");
         }
@@ -100,9 +113,20 @@ public class CriarAgendamentosRecorrentesTool implements FerramentaIA {
         Long professorId = ArgumentosTool.longObrigatorio(argumentos, "professorId");
         Long salaId = ArgumentosTool.longObrigatorio(argumentos, "salaId");
         Long especialidadeId = ArgumentosTool.longObrigatorio(argumentos, "especialidadeId");
+        for (Map.Entry<String, Long> idEntry : List.of(
+                Map.entry("professor", professorId),
+                Map.entry("sala", salaId),
+                Map.entry("especialidade", especialidadeId))) {
+            String erroId = GuardrailsNegocioIA.validarIdPositivo(idEntry.getValue(), idEntry.getKey());
+            if (erroId != null) {
+                return Map.of("erro", erroId);
+            }
+        }
+
         Set<Long> alunoIds = lerAlunoIds(argumentos.get("alunoIds"));
-        if (alunoIds.isEmpty()) {
-            return Map.of("erro", "Informe ao menos um aluno");
+        String erroAlunos = GuardrailsNegocioIA.validarListaAlunos(alunoIds);
+        if (erroAlunos != null) {
+            return Map.of("erro", erroAlunos);
         }
 
         List<LocalDateTime> datas = new ArrayList<>();

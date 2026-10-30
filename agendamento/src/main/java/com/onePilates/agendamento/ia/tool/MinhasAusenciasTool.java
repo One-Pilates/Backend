@@ -87,6 +87,19 @@ public class MinhasAusenciasTool implements FerramentaIA {
             return Map.of("erro", "A ausência não pode estar totalmente no passado");
         }
 
+        // Guardrail: impede sobreposição de ausências para o mesmo professor
+        boolean sobrepoe = minhas(usuario).stream().anyMatch(existente -> {
+            LocalDateTime exInicio = existente.getDataInicio();
+            LocalDateTime exFim = existente.getDataFim();
+            if (exInicio == null || exFim == null) {
+                return false;
+            }
+            return !(fim.isBefore(exInicio) || inicio.isAfter(exFim));
+        });
+        if (sobrepoe) {
+            return Map.of("erro", "Regra de negócio: você já possui uma ausência registrada que sobrepõe esse período.");
+        }
+
         AusenciaDTO dto = new AusenciaDTO();
         dto.setProfessorId(usuario.usuarioId());
         dto.setDataInicio(inicio);

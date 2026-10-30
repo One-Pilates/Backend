@@ -19,8 +19,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Agenda a mesma aula todos os dias (ex.: "todo dia às 8h") dentro de um período de no máximo 6 meses.
- * Cada data é criada em separado: as que o sistema recusar não impedem as demais e voltam com o motivo.
+ * Agenda a mesma aula todos os dias úteis (ex.: "todo dia às 8h") dentro de um período de no máximo 6 meses.
+ * Sábados e domingos são sempre ignorados conforme regra de negócio do estúdio (funcionamento de segunda a sexta).
  */
 @Component
 public class CriarAgendamentosDiariosTool implements FerramentaIA {
@@ -38,12 +38,12 @@ public class CriarAgendamentosDiariosTool implements FerramentaIA {
 
     @Override
     public String descricao() {
-        return "Agenda a mesma aula TODOS OS DIAS (ex.: 'todo dia às 8h', 'de segunda a sexta às 18h') dentro de um "
-                + "período de NO MÁXIMO 6 meses, com professor, sala, especialidade e alunos. Use apenasDiasUteis=true "
-                + "para pular sábados e domingos. Cada data é criada em separado: as que o sistema recusar não impedem "
-                + "as outras e voltam em 'falhas' com o motivo. Se o usuário pedir recorrência diária e NÃO informar "
-                + "até quando, pergunte o período (máximo 6 meses) antes de chamar; nunca assuma o período. Descubra "
-                + "antes todos os ids com as tools de consulta. Para um único dia da semana use "
+        return "Agenda a mesma aula TODOS OS DIAS ÚTEIS (segunda a sexta-feira, ex.: 'todo dia às 8h', 'de segunda a sexta às 18h') "
+                + "dentro de um período de NO MÁXIMO 6 meses, com professor, sala, especialidade e alunos. "
+                + "Sábados e domingos são automaticamente ignorados pois o estúdio não funciona aos finais de semana. "
+                + "Cada data é criada em separado: as que o sistema recusar não impedem as outras e voltam em 'falhas' com o motivo. "
+                + "Se o usuário pedir recorrência diária e NÃO informar até quando, pergunte o período (máximo 6 meses) antes de chamar; "
+                + "nunca assuma o período. Descubra antes todos os ids com as tools de consulta. Para um único dia da semana use "
                 + "criar_agendamentos_recorrentes; para uma aula única use criar_agendamento.";
     }
 
@@ -56,12 +56,13 @@ public class CriarAgendamentosDiariosTool implements FerramentaIA {
         return Map.of(
                 "type", "object",
                 "properties", Map.of(
-                        "horario", Map.of("type", "string", "description", "Horário HH:MM, ex.: 08:00"),
+                        "horario", Map.of("type", "string",
+                                "description", "Horário em hora cheia HH:00 entre 08:00 e 19:00, ex.: 08:00"),
                         "dataInicio", Map.of("type", "string", "description", "AAAA-MM-DD; primeiro dia (inclusive)"),
                         "dataFim", Map.of("type", "string",
                                 "description", "AAAA-MM-DD (inclusive); no máximo 6 meses após dataInicio"),
                         "apenasDiasUteis", Map.of("type", "boolean",
-                                "description", "true pula sábados e domingos; padrão false (todos os dias)"),
+                                "description", "Sempre considerado true (o estúdio funciona apenas de segunda a sexta-feira)"),
                         "professorId", Map.of("type", "integer"),
                         "salaId", Map.of("type", "integer"),
                         "especialidadeId", Map.of("type", "integer"),
@@ -82,6 +83,12 @@ public class CriarAgendamentosDiariosTool implements FerramentaIA {
         } catch (DateTimeParseException e) {
             return Map.of("erro", "horario deve ser HH:MM e as datas AAAA-MM-DD");
         }
+
+        String erroHorario = GuardrailsNegocioIA.validarHorarioExpediente(horario);
+        if (erroHorario != null) {
+            return Map.of("erro", erroHorario);
+        }
+
         if (fim.isBefore(inicio)) {
             return Map.of("erro", "A data de fim não pode ser anterior à de início");
         }
@@ -90,24 +97,36 @@ public class CriarAgendamentosDiariosTool implements FerramentaIA {
                     + " meses. Peça ao usuário um período menor.");
         }
 
-        boolean apenasUteis = Boolean.parseBoolean(String.valueOf(argumentos.get("apenasDiasUteis")));
         Long professorId = ArgumentosTool.longObrigatorio(argumentos, "professorId");
         Long salaId = ArgumentosTool.longObrigatorio(argumentos, "salaId");
         Long especialidadeId = ArgumentosTool.longObrigatorio(argumentos, "especialidadeId");
-        Set<Long> alunoIds = lerAlunoIds(argumentos.get("alunoIds"));
-        if (alunoIds.isEmpty()) {
-            return Map.of("erro", "Informe ao menos um aluno");
+        for (Map.Entry<String, Long> idEntry : List.of(
+                Map.entry("professor", professorId),
+                Map.entry("sala", salaId),
+                Map.entry("especialidade", especialidadeId))) {
+            String erroId = GuardrailsNegocioIA.validarIdPositivo(idEntry.getValue(), idEntry.getKey());
+            if (erroId != null) {
+                return Map.of("erro", erroId);
+            }
         }
 
+        Set<Long> alunoIds = lerAlunoIds(argumentos.get("alunoIds"));
+        String erroAlunos = GuardrailsNegocioIA.validarListaAlunos(alunoIds);
+        if (erroAlunos != null) {
+            return Map.of("erro", erroAlunos);
+        }
+
+        // Regra de negócio inviolável: o estúdio funciona apenas de segunda a sexta-feira (pula sábado e domingo)
         List<LocalDateTime> datas = new ArrayList<>();
         for (LocalDate d = inicio; !d.isAfter(fim); d = d.plusDays(1)) {
             boolean fimDeSemana = d.getDayOfWeek() == DayOfWeek.SATURDAY || d.getDayOfWeek() == DayOfWeek.SUNDAY;
-            if (!(apenasUteis && fimDeSemana)) {
+            if (!fimDeSemana) {
                 datas.add(d.atTime(horario));
             }
         }
         if (datas.isEmpty()) {
-            return Map.of("erro", "Não há nenhum dia válido entre " + inicio + " e " + fim);
+            return Map.of("erro", "Regra de negócio: o estúdio não abre aos sábados e domingos. "
+                    + "Não há nenhum dia útil (segunda a sexta-feira) entre " + inicio + " e " + fim + ".");
         }
 
         // cada criação tem a própria transação (no service): uma recusa não desfaz as que deram certo
@@ -134,7 +153,7 @@ public class CriarAgendamentosDiariosTool implements FerramentaIA {
         }
         return Map.of(
                 "sucesso", !criadas.isEmpty(),
-                "frequencia", apenasUteis ? "dias úteis" : "todos os dias",
+                "frequencia", "dias úteis (segunda a sexta-feira)",
                 "periodo", inicio + " a " + fim,
                 "totalTentativas", datas.size(),
                 "totalCriadas", criadas.size(),
