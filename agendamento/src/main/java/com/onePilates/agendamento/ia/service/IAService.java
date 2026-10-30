@@ -1,7 +1,9 @@
 package com.onePilates.agendamento.ia.service;
 
 import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
+import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
+import com.onePilates.agendamento.ia.client.GroqClient;
 import com.onePilates.agendamento.ia.dto.IARealizacaoDTO;
 import com.onePilates.agendamento.ia.dto.IARequestDTO;
 import com.onePilates.agendamento.ia.dto.IASolicitacaoDTO;
@@ -14,15 +16,19 @@ import com.onePilates.agendamento.ia.repository.IARealizacaoRepository;
 import com.onePilates.agendamento.model.Funcionario;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * Lado síncrono da IA: valida o usuário, registra a realização e a envia para a fila (responde na hora);
- * e consulta o andamento. Quem executa o agente é o {@link IAProcessador}.
+ * Lado síncrono da IA: valida o usuário, transcreve áudio (quando enviado), registra a realização
+ * e a envia para a fila (responde na hora); e consulta o andamento. Quem executa o agente é o {@link IAProcessador}.
  */
 @Service
 public class IAService {
@@ -34,15 +40,24 @@ public class IAService {
     private final IAAcaoRepository acaoRepository;
     private final ConversaService conversaService;
     private final ApplicationEventPublisher eventos;
+    private final GroqClient groqClient;
 
+    @Autowired
     public IAService(FuncionarioRepository funcionarioRepository, IARealizacaoRepository realizacaoRepository,
                      IAAcaoRepository acaoRepository, ConversaService conversaService,
-                     ApplicationEventPublisher eventos) {
+                     ApplicationEventPublisher eventos, GroqClient groqClient) {
         this.funcionarioRepository = funcionarioRepository;
         this.realizacaoRepository = realizacaoRepository;
         this.acaoRepository = acaoRepository;
         this.conversaService = conversaService;
         this.eventos = eventos;
+        this.groqClient = groqClient;
+    }
+
+    public IAService(FuncionarioRepository funcionarioRepository, IARealizacaoRepository realizacaoRepository,
+                     IAAcaoRepository acaoRepository, ConversaService conversaService,
+                     ApplicationEventPublisher eventos) {
+        this(funcionarioRepository, realizacaoRepository, acaoRepository, conversaService, eventos, null);
     }
 
     @Transactional
@@ -73,6 +88,54 @@ public class IAService {
         return new IASolicitacaoDTO(realizacao.getId(), realizacao.getStatus());
     }
 
+    /**
+     * Recebe um arquivo de áudio, realiza a transcrição via Groq Whisper e encaminha o texto transcrito
+     * diretamente para o fluxo do Agente IA.
+     */
+    @Transactional
+    public IASolicitacaoDTO solicitarPorAudio(Long usuarioId, MultipartFile audio, Boolean novaConversa,
+                                              String emailAutenticado) {
+        validarUsuario(usuarioId, emailAutenticado);
+        String textoTranscrito = transcreverAudio(audio);
+
+        IARequestDTO requestDTO = new IARequestDTO(
+                usuarioId,
+                LocalDateTime.now(),
+                textoTranscrito,
+                novaConversa
+        );
+        IASolicitacaoDTO solicitacao = solicitar(requestDTO, emailAutenticado);
+        return new IASolicitacaoDTO(solicitacao.realizacaoId(), solicitacao.status(), textoTranscrito);
+    }
+
+    /**
+     * Transcreve um arquivo de áudio enviado pelo usuário para texto em português.
+     */
+    public String transcreverAudio(MultipartFile audio) {
+        if (audio == null || audio.isEmpty()) {
+            throw new IllegalArgumentException("Nenhum arquivo de áudio foi enviado ou o áudio está vazio.");
+        }
+        if (groqClient == null) {
+            throw new IllegalStateException("Cliente de transcrição da IA não configurado.");
+        }
+        try {
+            String transcricao = groqClient.transcreverAudio(
+                    audio.getBytes(),
+                    audio.getOriginalFilename(),
+                    audio.getContentType()
+            );
+            if (transcricao == null || transcricao.isBlank()) {
+                throw new OperacaoInvalidaException(
+                        "Não foi possível identificar fala no áudio enviado. Tente gravar novamente falando mais próximo ao microfone."
+                );
+            }
+            return transcricao.trim();
+        } catch (IOException e) {
+            log.error("[IA] Erro ao ler bytes do arquivo de áudio: {}", e.getMessage());
+            throw new RuntimeException("Não foi possível ler o arquivo de áudio enviado.", e);
+        }
+    }
+
     @Transactional(readOnly = true)
     public IARealizacaoDTO consultar(Long realizacaoId, String emailAutenticado) {
         Funcionario usuario = funcionarioRepository.findByEmail(emailAutenticado)
@@ -92,6 +155,9 @@ public class IAService {
 
     /** Garante que o usuário autenticado (e-mail vindo do JWT do header) é o usuarioId informado. */
     private Funcionario validarUsuario(Long usuarioId, String email) {
+        if (usuarioId == null) {
+            throw new IllegalArgumentException("O usuarioId é obrigatório");
+        }
         Funcionario funcionario = funcionarioRepository.findByEmail(email)
                 .orElseThrow(() -> {
                     log.warn("[IA] Pedido recusado: usuário do token não existe");
