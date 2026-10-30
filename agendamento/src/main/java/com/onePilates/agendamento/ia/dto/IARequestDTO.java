@@ -10,5 +10,11 @@ public record IARequestDTO(
         @NotNull LocalDateTime dataRequisicao,
         @NotBlank String mensagem,
         /** Opcional: true descarta a memória da conversa do usuário antes deste pedido. */
-        Boolean novaConversa
-) {}
+        Boolean novaConversa,
+        /** Opcional: id de uma conversa existente para continuar exatamente aquele chat do histórico. */
+        Long conversaId
+) {
+    public IARequestDTO(Long usuarioId, LocalDateTime dataRequisicao, String mensagem, Boolean novaConversa) {
+        this(usuarioId, dataRequisicao, mensagem, novaConversa, null);
+    }
+}
