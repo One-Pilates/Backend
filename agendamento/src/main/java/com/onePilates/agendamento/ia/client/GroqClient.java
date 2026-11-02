@@ -6,26 +6,36 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Único ponto de contato com a API da Groq (formato OpenAI chat/completions).
+ * Único ponto de contato com a API da Groq (formato OpenAI chat/completions e audio/transcriptions).
  * Quem precisar da Groq injeta este client em vez de montar a requisição HTTP.
  */
 @Component
 public class GroqClient {
 
     private static final Logger log = LoggerFactory.getLogger(GroqClient.class);
-    private static final String URL ="https://api.groq.com/openai/v1/chat/completions";
+    private static final String URL = "https://api.groq.com/openai/v1/chat/completions";
+    private static final String TRANSCRIPTION_URL = "https://api.groq.com/openai/v1/audio/transcriptions";
+    private static final Set<String> EXTENSOES_AUDIO_SUPORTADAS = Set.of(
+            "flac", "mp3", "mp4", "mpeg", "mpga", "m4a", "ogg", "wav", "webm"
+    );
     private static final int MAX_TENTATIVAS_429 = 3;
     /** Soma máxima de espera por chamada à Groq (várias esperas curtas cabem, uma muito longa não). */
     private static final long ORCAMENTO_ESPERA_MS = 45_000;
@@ -36,6 +46,9 @@ public class GroqClient {
 
     @Value("${groq.model:llama-3.3-70b-versatile}")
     private String model;
+
+    @Value("${groq.whisper.model:whisper-large-v3-turbo}")
+    private String whisperModel;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newBuilder()
@@ -58,6 +71,124 @@ public class GroqClient {
     public Map<String, Object> chatComTools(List<Map<String, Object>> messages, List<Map<String, Object>> tools,
                                             double temperature, int maxTokens) {
         return enviar(messages, tools, temperature, maxTokens);
+    }
+
+    /**
+     * Transcreve um arquivo de áudio para texto em português utilizando o modelo Whisper na Groq.
+     */
+    public String transcreverAudio(byte[] audioBytes, String nomeOriginal, String contentType) {
+        if (audioBytes == null || audioBytes.length == 0) {
+            throw new IllegalArgumentException("O arquivo de áudio enviado está vazio.");
+        }
+
+        String nomeArquivo = normalizarNomeArquivoAudio(nomeOriginal, contentType);
+        String mimeType = (contentType != null && !contentType.isBlank()) ? contentType : "audio/m4a";
+        String boundary = "----OnePilatesGroqBoundary" + UUID.randomUUID().toString().replace("-", "");
+
+        long inicioChamada = System.currentTimeMillis();
+        log.info("[IA][groq][whisper] Transcrevendo áudio ({} bytes, arquivo={}, tipo={}, modelo={})",
+                audioBytes.length, nomeArquivo, mimeType, whisperModel);
+
+        try {
+            byte[] multipartBody = construirMultipartAudio(boundary, audioBytes, nomeArquivo, mimeType);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(TRANSCRIPTION_URL))
+                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                    .header("Authorization", "Bearer " + groqApiKey.trim())
+                    .POST(HttpRequest.BodyPublishers.ofByteArray(multipartBody))
+                    .timeout(Duration.ofSeconds(45))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            long esperado = 0;
+            for (int tentativa = 1; tentativa <= MAX_TENTATIVAS_429 && response.statusCode() == 429; tentativa++) {
+                long espera = esperaSugeridaMs(response.body());
+                if (esperado + espera > ORCAMENTO_ESPERA_MS) {
+                    break;
+                }
+                log.warn("[IA][groq][whisper] Limite 429 na transcrição. Aguardando {} ms (tentativa {}/{})",
+                        espera, tentativa, MAX_TENTATIVAS_429);
+                Thread.sleep(espera);
+                esperado += espera;
+                response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            }
+
+            if (response.statusCode() != 200) {
+                log.error("[IA][groq][whisper] Erro {} ao transcrever áudio: {}", response.statusCode(), response.body());
+                throw new RuntimeException("Falha na transcrição de áudio (status " + response.statusCode() + ")");
+            }
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> responseMap = objectMapper.readValue(response.body(), Map.class);
+            Object textObj = responseMap.get("text");
+            String texto = textObj == null ? "" : textObj.toString().trim();
+
+            log.info("[IA][groq][whisper] Áudio transcrito em {} ms: \"{}\"",
+                    System.currentTimeMillis() - inicioChamada, texto);
+            return texto;
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Falha ao transcrever áudio na IA: " + e.getMessage(), e);
+        }
+    }
+
+    private String normalizarNomeArquivoAudio(String nomeOriginal, String contentType) {
+        String base = (nomeOriginal == null || nomeOriginal.isBlank()) ? "audio.m4a" : nomeOriginal.trim();
+        int idxPonto = base.lastIndexOf('.');
+        if (idxPonto > 0 && idxPonto < base.length() - 1) {
+            String ext = base.substring(idxPonto + 1).toLowerCase(Locale.ROOT);
+            if (EXTENSOES_AUDIO_SUPORTADAS.contains(ext)) {
+                return base;
+            }
+            base = base.substring(0, idxPonto);
+        } else {
+            base = "audio";
+        }
+
+        String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        if (ct.contains("webm")) return base + ".webm";
+        if (ct.contains("wav")) return base + ".wav";
+        if (ct.contains("ogg")) return base + ".ogg";
+        if (ct.contains("mp3") || ct.contains("mpeg")) return base + ".mp3";
+        if (ct.contains("flac")) return base + ".flac";
+        if (ct.contains("mp4")) return base + ".mp4";
+        return base + ".m4a";
+    }
+
+    private byte[] construirMultipartAudio(String boundary, byte[] audioBytes, String nomeArquivo, String mimeType)
+            throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream(audioBytes.length + 512);
+        String crlf = "\r\n";
+
+        // Campo file
+        out.write(("--" + boundary + crlf).getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Disposition: form-data; name=\"file\"; filename=\"" + nomeArquivo + "\"" + crlf)
+                .getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Type: " + mimeType + crlf + crlf).getBytes(StandardCharsets.UTF_8));
+        out.write(audioBytes);
+        out.write(crlf.getBytes(StandardCharsets.UTF_8));
+
+        // Campo model
+        escreverCampoForm(out, boundary, "model", whisperModel);
+        // Campo language
+        escreverCampoForm(out, boundary, "language", "pt");
+        // Campo response_format
+        escreverCampoForm(out, boundary, "response_format", "json");
+
+        out.write(("--" + boundary + "--" + crlf).getBytes(StandardCharsets.UTF_8));
+        return out.toByteArray();
+    }
+
+    private void escreverCampoForm(ByteArrayOutputStream out, String boundary, String nome, String valor)
+            throws IOException {
+        String crlf = "\r\n";
+        out.write(("--" + boundary + crlf).getBytes(StandardCharsets.UTF_8));
+        out.write(("Content-Disposition: form-data; name=\"" + nome + "\"" + crlf + crlf)
+                .getBytes(StandardCharsets.UTF_8));
+        out.write((valor + crlf).getBytes(StandardCharsets.UTF_8));
     }
 
     @SuppressWarnings("unchecked")

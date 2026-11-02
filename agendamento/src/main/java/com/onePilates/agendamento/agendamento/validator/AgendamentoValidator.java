@@ -83,6 +83,10 @@ public class AgendamentoValidator {
         // Validação 1: Data/Hora (validação barata, deve ser primeira)
         validarDataHora(dataHora);
 
+        if (dto.getAlunoIds() == null || dto.getAlunoIds().isEmpty()) {
+            throw new OperacaoInvalidaException("A aula deve possuir pelo menos um aluno agendado.");
+        }
+
         // Validação 2: Buscar entidades (necessário para outras validações)
         Sala sala = salaRepository.findById(dto.getSalaId())
                 .orElseThrow(() -> new EntidadeNaoEncontradaException("Sala não encontrada"));
@@ -141,6 +145,14 @@ public class AgendamentoValidator {
             );
         }
         
+        // Validar dias de funcionamento (Segunda a Sexta-feira — proibido Sábado e Domingo)
+        DayOfWeek diaSemana = dataHora.getDayOfWeek();
+        if (diaSemana == DayOfWeek.SATURDAY || diaSemana == DayOfWeek.SUNDAY) {
+            throw new OperacaoInvalidaException(
+                "Não é permitido agendar aulas aos sábados e domingos. O estúdio funciona apenas de segunda a sexta-feira."
+            );
+        }
+
         // Validar horário de expediente (8h às 20h)
         int hora = dataHora.getHour();
         if (hora < 8 || hora >= 20) {

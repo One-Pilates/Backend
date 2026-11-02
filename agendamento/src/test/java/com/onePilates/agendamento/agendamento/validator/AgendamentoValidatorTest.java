@@ -71,7 +71,7 @@ class AgendamentoValidatorTest {
     void setUp() {
         dto = new AgendamentoDTO();
         // Usar horário fixo válido (14:00) para evitar problemas com validação de horário
-        LocalDateTime dataHoraValida = LocalDateTime.now().plusDays(1).withHour(14).withMinute(0).withSecond(0).withNano(0);
+        LocalDateTime dataHoraValida = proximoDiaUtil().withHour(14).withMinute(0).withSecond(0).withNano(0);
         dto.setDataHora(dataHoraValida);
         dto.setSalaId(1L);
         dto.setProfessorId(1L);
@@ -237,14 +237,14 @@ class AgendamentoValidatorTest {
 
     @Test
     void validar_DeveLancarOperacaoInvalidaException_QuandoHorarioAntesDas8h() {
-        dto.setDataHora(LocalDateTime.now().plusDays(1).withHour(7).withMinute(0));
+        dto.setDataHora(proximoDiaUtil().withHour(7).withMinute(0));
 
         assertThrows(OperacaoInvalidaException.class, () -> validator.validar(dto));
     }
 
     @Test
     void validar_DeveLancarOperacaoInvalidaException_QuandoHorarioDepoisDas20h() {
-        dto.setDataHora(LocalDateTime.now().plusDays(1).withHour(20).withMinute(0));
+        dto.setDataHora(proximoDiaUtil().withHour(20).withMinute(0));
 
         assertThrows(OperacaoInvalidaException.class, () -> validator.validar(dto));
     }
@@ -435,7 +435,7 @@ class AgendamentoValidatorTest {
 
     @Test
     void validar_DeveAceitarHorarioExatoDe8h() {
-        dto.setDataHora(LocalDateTime.now().plusDays(1).withHour(8).withMinute(0));
+        dto.setDataHora(proximoDiaUtil().withHour(8).withMinute(0));
 
         Especialidade esp = new Especialidade();
         esp.setId(1L);
@@ -456,7 +456,7 @@ class AgendamentoValidatorTest {
 
     @Test
     void validar_DeveAceitarHorarioExatoDe19h59() {
-        dto.setDataHora(LocalDateTime.now().plusDays(1).withHour(19).withMinute(59));
+        dto.setDataHora(proximoDiaUtil().withHour(19).withMinute(59));
 
         Especialidade esp = new Especialidade();
         esp.setId(1L);
@@ -486,7 +486,7 @@ class AgendamentoValidatorTest {
 
         Ausencia ausencia = new Ausencia();
         ausencia.setDiaSemanaInicio(DiaSemana.SEGUNDA);
-        ausencia.setDiaSemanaFim(DiaSemana.SEXTA);
+        ausencia.setDiaSemanaFim(DiaSemana.QUARTA);
 
         Especialidade esp = new Especialidade();
         esp.setId(1L);
@@ -506,14 +506,14 @@ class AgendamentoValidatorTest {
     void validar_DevePassar_QuandoProfessorNaoEstaAusentePorDiaSemana() {
         // Criar data para domingo (fora do intervalo de segunda a sexta)
         LocalDateTime domingo = LocalDateTime.now().plusDays(1);
-        while (domingo.getDayOfWeek() != java.time.DayOfWeek.SUNDAY) {
+        while (domingo.getDayOfWeek() != java.time.DayOfWeek.FRIDAY) {
             domingo = domingo.plusDays(1);
         }
         dto.setDataHora(domingo.withHour(14).withMinute(0));
 
         Ausencia ausencia = new Ausencia();
         ausencia.setDiaSemanaInicio(DiaSemana.SEGUNDA);
-        ausencia.setDiaSemanaFim(DiaSemana.SEXTA);
+        ausencia.setDiaSemanaFim(DiaSemana.QUARTA);
 
         Especialidade esp = new Especialidade();
         esp.setId(1L);
@@ -661,6 +661,36 @@ class AgendamentoValidatorTest {
         when(agendamentoRepository.findBySalaIdAndDataHoraExcludingId(any(), any(), any())).thenReturn(Optional.empty());
 
         assertThrows(ConflitoHorarioException.class, () -> validator.validar(dto));
+    }
+
+    @Test
+    void validar_DeveLancarOperacaoInvalidaException_QuandoAgendamentoNoSabado() {
+        LocalDateTime sabado = LocalDateTime.now().plusDays(1);
+        while (sabado.getDayOfWeek() != java.time.DayOfWeek.SATURDAY) {
+            sabado = sabado.plusDays(1);
+        }
+        dto.setDataHora(sabado.withHour(10).withMinute(0));
+
+        assertThrows(OperacaoInvalidaException.class, () -> validator.validar(dto));
+    }
+
+    private LocalDateTime proximoDiaUtil() {
+        LocalDateTime d = LocalDateTime.now().plusDays(1);
+        while (d.getDayOfWeek() == java.time.DayOfWeek.SATURDAY || d.getDayOfWeek() == java.time.DayOfWeek.SUNDAY) {
+            d = d.plusDays(1);
+        }
+        return d;
+    }
+
+    @Test
+    void validar_DeveLancarOperacaoInvalidaException_QuandoAgendamentoNoDomingo() {
+        LocalDateTime domingo = LocalDateTime.now().plusDays(1);
+        while (domingo.getDayOfWeek() != java.time.DayOfWeek.SUNDAY) {
+            domingo = domingo.plusDays(1);
+        }
+        dto.setDataHora(domingo.withHour(10).withMinute(0));
+
+        assertThrows(OperacaoInvalidaException.class, () -> validator.validar(dto));
     }
 
     @Test

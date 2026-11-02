@@ -6,6 +6,7 @@ import com.onePilates.agendamento.agendamento.service.AgendamentoService;
 import com.onePilates.agendamento.model.enums.Role;
 import org.springframework.stereotype.Component;
 
+import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;
 import java.util.HashSet;
@@ -30,8 +31,9 @@ public class AtualizarAulaTool implements FerramentaIA {
     @Override
     public String descricao() {
         return "Atualiza uma aula agendada. Informe apenas os campos que devem mudar: horário, professor, "
-                + "sala, especialidade ou a lista completa de alunos. Só use quando o usuário pedir explicitamente "
-                + "e depois de confirmar os ids com as tools de consulta. As regras de conflito são aplicadas.";
+                + "sala, especialidade ou a lista completa de alunos. REGRAS DE NEGÓCIO: é proibido agendar ou mover "
+                + "aulas para sábado ou domingo (funcionamento apenas de segunda a sexta-feira, das 08:00 às 19:00). "
+                + "Só use quando o usuário pedir explicitamente e depois de confirmar os ids com as tools de consulta.";
     }
 
     @Override
@@ -45,23 +47,37 @@ public class AtualizarAulaTool implements FerramentaIA {
                 "type", "object",
                 "properties", Map.of(
                         "agendamentoId", Map.of("type", "integer"),
-                        "dataHora", Map.of("type", "string", "description", "Novo horário AAAA-MM-DDTHH:MM"),
+                        "dataHora", Map.of("type", "string",
+                                "description", "Novo horário AAAA-MM-DDTHH:00 (segunda a sexta, das 08:00 às 19:00)"),
                         "professorId", Map.of("type", "integer"),
                         "salaId", Map.of("type", "integer"),
                         "especialidadeId", Map.of("type", "integer"),
                         "alunoIds", Map.of("type", "array", "items", Map.of("type", "integer"),
-                                "description", "Lista completa de ids dos alunos da aula")),
+                                "description", "Lista completa de ids dos alunos da aula (mínimo 1 aluno)")),
                 "required", List.of("agendamentoId"));
     }
 
     @Override
     public Object executar(Map<String, Object> argumentos, ContextoUsuario usuario) {
         Long agendamentoId = ArgumentosTool.longObrigatorio(argumentos, "agendamentoId");
+        String erroId = GuardrailsNegocioIA.validarIdPositivo(agendamentoId, "agendamento");
+        if (erroId != null) {
+            return Map.of("erro", erroId);
+        }
+
         AgendamentoDTO dto = new AgendamentoDTO();
 
         try {
             if (argumentos.get("dataHora") != null) {
-                dto.setDataHora(LocalDateTime.parse(String.valueOf(argumentos.get("dataHora"))));
+                LocalDateTime novaDataHora = LocalDateTime.parse(String.valueOf(argumentos.get("dataHora")));
+                DayOfWeek dia = novaDataHora.getDayOfWeek();
+                if (dia == DayOfWeek.SATURDAY || dia == DayOfWeek.SUNDAY) {
+                    return Map.of("erro", GuardrailsNegocioIA.validarDiaSemanaFuncionamento(dia));
+                }
+                if (novaDataHora.getHour() < 8 || novaDataHora.getHour() >= 20) {
+                    return Map.of("erro", "Regra de negócio: o horário de início da aula deve ser entre 08:00 e 19:00.");
+                }
+                dto.setDataHora(novaDataHora);
             }
         } catch (DateTimeParseException e) {
             return Map.of("erro", "dataHora inválida, use AAAA-MM-DDTHH:MM");
@@ -73,7 +89,12 @@ public class AtualizarAulaTool implements FerramentaIA {
 
         if (argumentos.containsKey("alunoIds")) {
             try {
-                dto.setAlunoIds(lerAlunoIds(argumentos.get("alunoIds")));
+                Set<Long> ids = lerAlunoIds(argumentos.get("alunoIds"));
+                String erroAlunos = GuardrailsNegocioIA.validarListaAlunos(ids);
+                if (erroAlunos != null) {
+                    return Map.of("erro", erroAlunos);
+                }
+                dto.setAlunoIds(ids);
             } catch (IllegalArgumentException e) {
                 return Map.of("erro", "alunoIds deve ser uma lista de números");
             }
