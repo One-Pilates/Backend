@@ -3,7 +3,10 @@ package com.onePilates.agendamento.aluno.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onePilates.agendamento.aluno.dto.AlunoDTO;
 import com.onePilates.agendamento.aluno.dto.AlunoResponseDTO;
+import com.onePilates.agendamento.aluno.dto.PacoteAulaResponseDTO;
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.aluno.service.AlunoService;
+import com.onePilates.agendamento.aluno.service.PacoteAulaService;
 import com.onePilates.agendamento.auth.security.JwtUtil;
 import com.onePilates.agendamento.config.TestSecurityConfig;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
@@ -20,6 +23,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -39,6 +43,12 @@ class AlunoControllerTest {
 
     @MockBean
     private AlunoService alunoService;
+
+    @MockBean
+    private PacoteAulaService pacoteAulaService;
+
+    @MockBean
+    private AlunoRepository alunoRepository;
 
     @MockBean
     private JwtUtil jwtUtil;
@@ -173,6 +183,58 @@ class AlunoControllerTest {
                 .andExpect(status().isNoContent());
 
         verify(alunoService).excluirAluno(1L);
+    }
+
+    @Test
+    @WithMockUser(authorities = {"ADMINISTRADOR"})
+    void consultarPacotes_DeveRetornar200_QuandoAdministrador() throws Exception {
+        when(pacoteAulaService.listar(1L)).thenReturn(List.of(new PacoteAulaResponseDTO()));
+
+        mockMvc.perform(get("/api/alunos/1/pacotes"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(username = "outro@teste.com", authorities = {"ALUNO"})
+    void consultarPacotes_DeveRetornar403_QuandoAlunoConsultaOutroId() throws Exception {
+        Aluno aluno = new Aluno();
+        aluno.setId(99L);
+        when(alunoRepository.findByEmail("outro@teste.com")).thenReturn(Optional.of(aluno));
+
+        mockMvc.perform(get("/api/alunos/1/pacotes"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(authorities = {"SECRETARIA"})
+    void definirPacote_DeveRetornar200_QuandoSecretaria() throws Exception {
+        com.onePilates.agendamento.model.PacoteAula pacote = new com.onePilates.agendamento.model.PacoteAula();
+        pacote.setAulasRemanescentes(10);
+        when(pacoteAulaService.definir(eq(1L), eq(2L), eq(10))).thenReturn(pacote);
+
+        mockMvc.perform(put("/api/alunos/1/pacotes/2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aulasRemanescentes\":10}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aulasRemanescentes").value(10));
+    }
+
+    @Test
+    @WithMockUser(authorities = {"ALUNO"})
+    void definirPacote_DeveRetornar403_QuandoAluno() throws Exception {
+        mockMvc.perform(put("/api/alunos/1/pacotes/2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aulasRemanescentes\":10}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithMockUser(authorities = {"PROFESSOR"})
+    void definirPacote_DeveRetornar403_QuandoProfessor() throws Exception {
+        mockMvc.perform(put("/api/alunos/1/pacotes/2")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"aulasRemanescentes\":10}"))
+                .andExpect(status().isForbidden());
     }
 }
 

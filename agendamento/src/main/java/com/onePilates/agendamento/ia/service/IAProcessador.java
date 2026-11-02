@@ -1,5 +1,6 @@
 package com.onePilates.agendamento.ia.service;
 
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
 import com.onePilates.agendamento.ia.client.GroqClient;
 import com.onePilates.agendamento.ia.messaging.IAMensagemFila;
@@ -8,7 +9,9 @@ import com.onePilates.agendamento.ia.model.StatusRealizacao;
 import com.onePilates.agendamento.ia.repository.IAAcaoRepository;
 import com.onePilates.agendamento.ia.repository.IARealizacaoRepository;
 import com.onePilates.agendamento.ia.tool.ContextoUsuario;
+import com.onePilates.agendamento.model.Aluno;
 import com.onePilates.agendamento.model.Funcionario;
+import com.onePilates.agendamento.model.enums.Role;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
@@ -38,16 +41,18 @@ public class IAProcessador {
     private final IARealizacaoRepository realizacaoRepository;
     private final IAAcaoRepository acaoRepository;
     private final FuncionarioRepository funcionarioRepository;
+    private final AlunoRepository alunoRepository;
     private final ConversaService conversaService;
     private final GroqClient groqClient;
     private final AgentService agentService;
 
     public IAProcessador(IARealizacaoRepository realizacaoRepository, IAAcaoRepository acaoRepository,
-                         FuncionarioRepository funcionarioRepository, ConversaService conversaService,
-                         GroqClient groqClient, AgentService agentService) {
+                         FuncionarioRepository funcionarioRepository, AlunoRepository alunoRepository,
+                         ConversaService conversaService, GroqClient groqClient, AgentService agentService) {
         this.realizacaoRepository = realizacaoRepository;
         this.acaoRepository = acaoRepository;
         this.funcionarioRepository = funcionarioRepository;
+        this.alunoRepository = alunoRepository;
         this.conversaService = conversaService;
         this.groqClient = groqClient;
         this.agentService = agentService;
@@ -83,10 +88,7 @@ public class IAProcessador {
 
     private void processar(IARealizacao realizacao) {
         // sem JWT aqui: o dono vem gravado na realização, definido no endpoint a partir do token validado
-        Funcionario funcionario = funcionarioRepository.findById(realizacao.getUsuarioId())
-                .orElseThrow(() -> new IllegalStateException("Usuário " + realizacao.getUsuarioId() + " não existe mais"));
-        ContextoUsuario usuario = new ContextoUsuario(funcionario.getId(), funcionario.getNome(),
-                funcionario.getRole(), realizacao.getMensagem());
+        ContextoUsuario usuario = montarContexto(realizacao);
 
         ProgressoAgente progresso = new ProgressoRealizacao(realizacao.getId(), acaoRepository);
         List<Map<String, Object>> historico = conversaService.historico(realizacao.getConversaId());
@@ -120,6 +122,17 @@ public class IAProcessador {
         realizacao.concluir(resposta);
         realizacaoRepository.save(realizacao);
         conversaService.renovar(realizacao.getConversaId());
+    }
+
+    private ContextoUsuario montarContexto(IARealizacao realizacao) {
+        Funcionario funcionario = funcionarioRepository.findById(realizacao.getUsuarioId()).orElse(null);
+        if (funcionario != null) {
+            return new ContextoUsuario(funcionario.getId(), funcionario.getNome(),
+                    funcionario.getRole(), realizacao.getMensagem());
+        }
+        Aluno aluno = alunoRepository.findById(realizacao.getUsuarioId())
+                .orElseThrow(() -> new IllegalStateException("Usuário " + realizacao.getUsuarioId() + " não existe mais"));
+        return new ContextoUsuario(aluno.getId(), aluno.getNome(), Role.ALUNO, realizacao.getMensagem());
     }
 
     private String melhorarPrompt(String mensagem) {

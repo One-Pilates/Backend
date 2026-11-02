@@ -1,5 +1,6 @@
 package com.onePilates.agendamento.ia.service;
 
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
 import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
@@ -16,6 +17,7 @@ import com.onePilates.agendamento.ia.model.StatusRealizacao;
 import com.onePilates.agendamento.ia.repository.IAAcaoRepository;
 import com.onePilates.agendamento.ia.repository.IAConversaRepository;
 import com.onePilates.agendamento.ia.repository.IARealizacaoRepository;
+import com.onePilates.agendamento.model.Aluno;
 import com.onePilates.agendamento.model.Funcionario;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,6 +31,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Lado síncrono da IA: valida o usuário, transcreve áudio (quando enviado), registra a realização
@@ -47,11 +50,13 @@ public class IAService {
     private final ConversaService conversaService;
     private final ApplicationEventPublisher eventos;
     private final GroqClient groqClient;
+    private final AlunoRepository alunoRepository;
 
     @Autowired
     public IAService(FuncionarioRepository funcionarioRepository, IARealizacaoRepository realizacaoRepository,
                      IAAcaoRepository acaoRepository, IAConversaRepository conversaRepository,
-                     ConversaService conversaService, ApplicationEventPublisher eventos, GroqClient groqClient) {
+                     ConversaService conversaService, ApplicationEventPublisher eventos, GroqClient groqClient,
+                     AlunoRepository alunoRepository) {
         this.funcionarioRepository = funcionarioRepository;
         this.realizacaoRepository = realizacaoRepository;
         this.acaoRepository = acaoRepository;
@@ -59,18 +64,19 @@ public class IAService {
         this.conversaService = conversaService;
         this.eventos = eventos;
         this.groqClient = groqClient;
+        this.alunoRepository = alunoRepository;
     }
 
     public IAService(FuncionarioRepository funcionarioRepository, IARealizacaoRepository realizacaoRepository,
                      IAAcaoRepository acaoRepository, ConversaService conversaService,
                      ApplicationEventPublisher eventos, GroqClient groqClient) {
-        this(funcionarioRepository, realizacaoRepository, acaoRepository, null, conversaService, eventos, groqClient);
+        this(funcionarioRepository, realizacaoRepository, acaoRepository, null, conversaService, eventos, groqClient, null);
     }
 
     public IAService(FuncionarioRepository funcionarioRepository, IARealizacaoRepository realizacaoRepository,
                      IAAcaoRepository acaoRepository, ConversaService conversaService,
                      ApplicationEventPublisher eventos) {
-        this(funcionarioRepository, realizacaoRepository, acaoRepository, null, conversaService, eventos, null);
+        this(funcionarioRepository, realizacaoRepository, acaoRepository, null, conversaService, eventos, null, null);
     }
 
     @Transactional
@@ -78,29 +84,29 @@ public class IAService {
         log.info("[IA] Pedido recebido: usuarioId={} dataRequisicao={} mensagem=\"{}\"",
                 dto.usuarioId(), dto.dataRequisicao(), resumir(dto.mensagem()));
 
-        Funcionario usuario = validarUsuario(dto.usuarioId(), emailAutenticado);
+        Long usuarioId = validarUsuario(dto.usuarioId(), emailAutenticado);
 
         // pedido anterior preso (erro, timeout do front, worker caído) não pode travar o usuário:
         // o novo pedido vence e os anteriores em andamento são cancelados
         for (IARealizacao anterior : realizacaoRepository.findByUsuarioIdAndStatusIn(
-                usuario.getId(), List.of(StatusRealizacao.PENDENTE, StatusRealizacao.PROCESSANDO))) {
+                usuarioId, List.of(StatusRealizacao.PENDENTE, StatusRealizacao.PROCESSANDO))) {
             anterior.falhar("Cancelado: um novo pedido foi enviado.");
             realizacaoRepository.save(anterior);
             log.warn("[IA] Realização {} em andamento cancelada por novo pedido do usuário {}",
-                    anterior.getId(), usuario.getId());
+                    anterior.getId(), usuarioId);
         }
 
         boolean novaConversa = Boolean.TRUE.equals(dto.novaConversa());
         IAConversa conversa = dto.conversaId() != null
-                ? conversaService.obterOuCriar(usuario.getId(), novaConversa, dto.conversaId())
-                : conversaService.obterOuCriar(usuario.getId(), novaConversa);
+                ? conversaService.obterOuCriar(usuarioId, novaConversa, dto.conversaId())
+                : conversaService.obterOuCriar(usuarioId, novaConversa);
         IARealizacao realizacao = realizacaoRepository.save(
-                new IARealizacao(usuario.getId(), conversa.getId(), dto.mensagem()));
+                new IARealizacao(usuarioId, conversa.getId(), dto.mensagem()));
 
         // a fila só é acionada depois do commit (ver IAFilaPublisher)
         eventos.publishEvent(new IARealizacaoCriadaEvent(realizacao.getId()));
         log.info("[IA] Realização {} registrada para o usuário {} (conversa {})",
-                realizacao.getId(), usuario.getId(), conversa.getId());
+                realizacao.getId(), usuarioId, conversa.getId());
         return new IASolicitacaoDTO(realizacao.getId(), realizacao.getStatus(), null, conversa.getId());
     }
 
@@ -166,11 +172,10 @@ public class IAService {
 
     @Transactional(readOnly = true)
     public IARealizacaoDTO consultar(Long realizacaoId, String emailAutenticado) {
-        Funcionario usuario = funcionarioRepository.findByEmail(emailAutenticado)
-                .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário do token não encontrado"));
+        Long usuarioId = idDoToken(emailAutenticado);
         // de outro usuário = mesma resposta de "não existe", para não revelar ids alheios
         IARealizacao r = realizacaoRepository.findById(realizacaoId)
-                .filter(x -> x.getUsuarioId().equals(usuario.getId()))
+                .filter(x -> x.getUsuarioId().equals(usuarioId))
                 .orElseThrow(() -> new EntidadeNaoEncontradaException("Realização não encontrada"));
 
         return mapearRealizacaoDTO(r);
@@ -182,10 +187,9 @@ public class IAService {
         if (conversaRepository == null) {
             return List.of();
         }
-        Funcionario usuario = funcionarioRepository.findByEmail(emailAutenticado)
-                .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário do token não encontrado"));
+        Long usuarioId = idDoToken(emailAutenticado);
 
-        List<IAConversa> conversas = conversaRepository.findByUsuarioIdOrderByUltimoUsoDesc(usuario.getId());
+        List<IAConversa> conversas = conversaRepository.findByUsuarioIdOrderByUltimoUsoDesc(usuarioId);
         List<IAConversaResumoDTO> resultado = new ArrayList<>();
         for (IAConversa c : conversas) {
             List<IARealizacao> msgs = realizacaoRepository.findByConversaIdOrderByIdAsc(c.getId());
@@ -210,11 +214,10 @@ public class IAService {
         if (conversaRepository == null) {
             throw new EntidadeNaoEncontradaException("Conversa não encontrada");
         }
-        Funcionario usuario = funcionarioRepository.findByEmail(emailAutenticado)
-                .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário do token não encontrado"));
+        Long usuarioId = idDoToken(emailAutenticado);
 
         IAConversa conversa = conversaRepository.findById(conversaId)
-                .filter(c -> c.getUsuarioId().equals(usuario.getId()))
+                .filter(c -> c.getUsuarioId().equals(usuarioId))
                 .orElseThrow(() -> new EntidadeNaoEncontradaException("Conversa não encontrada"));
 
         List<IARealizacao> realizacoes = realizacaoRepository.findByConversaIdOrderByIdAsc(conversa.getId());
@@ -241,11 +244,10 @@ public class IAService {
         if (conversaRepository == null) {
             return;
         }
-        Funcionario usuario = funcionarioRepository.findByEmail(emailAutenticado)
-                .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário do token não encontrado"));
+        Long usuarioId = idDoToken(emailAutenticado);
 
         IAConversa conversa = conversaRepository.findById(conversaId)
-                .filter(c -> c.getUsuarioId().equals(usuario.getId()))
+                .filter(c -> c.getUsuarioId().equals(usuarioId))
                 .orElseThrow(() -> new EntidadeNaoEncontradaException("Conversa não encontrada"));
 
         List<IARealizacao> realizacoes = realizacaoRepository.findByConversaIdOrderByIdAsc(conversa.getId());
@@ -275,21 +277,37 @@ public class IAService {
     }
 
     /** Garante que o usuário autenticado (e-mail vindo do JWT do header) é o usuarioId informado. */
-    private Funcionario validarUsuario(Long usuarioId, String email) {
+    private Long validarUsuario(Long usuarioId, String email) {
         if (usuarioId == null) {
             throw new IllegalArgumentException("O usuarioId é obrigatório");
         }
-        Funcionario funcionario = funcionarioRepository.findByEmail(email)
-                .orElseThrow(() -> {
-                    log.warn("[IA] Pedido recusado: usuário do token não existe");
-                    return new IllegalArgumentException("Usuário do token não encontrado");
-                });
-        if (!funcionario.getId().equals(usuarioId)) {
+        Long idReal;
+        try {
+            idReal = idDoToken(email);
+        } catch (EntidadeNaoEncontradaException e) {
+            log.warn("[IA] Pedido recusado: usuário do token não existe");
+            throw new IllegalArgumentException("Usuário do token não encontrado");
+        }
+        if (!idReal.equals(usuarioId)) {
             log.warn("[IA] Pedido recusado: usuarioId {} não pertence ao dono do JWT (id real {})",
-                    usuarioId, funcionario.getId());
+                    usuarioId, idReal);
             throw new IllegalArgumentException("O usuarioId não corresponde ao dono do JWT");
         }
-        return funcionario;
+        return idReal;
+    }
+
+    private Long idDoToken(String email) {
+        Optional<Funcionario> funcionario = funcionarioRepository.findByEmail(email);
+        if (funcionario != null && funcionario.isPresent()) {
+            return funcionario.get().getId();
+        }
+        if (alunoRepository != null) {
+            Optional<Aluno> aluno = alunoRepository.findByEmail(email);
+            if (aluno != null && aluno.isPresent()) {
+                return aluno.get().getId();
+            }
+        }
+        throw new EntidadeNaoEncontradaException("Usuário do token não encontrado");
     }
 
     private String resumir(String texto) {

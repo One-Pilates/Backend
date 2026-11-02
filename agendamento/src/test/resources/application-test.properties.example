@@ -1,20 +1,23 @@
-# Configurações para testes
-spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;MODE=MySQL
-spring.datasource.driverClassName=org.h2.Driver
-spring.datasource.username=sa
+spring.datasource.url=jdbc:mysql://localhost:3306/onepilates_teste?useSSL=false&allowPublicKeyRetrieval=true
+spring.datasource.username=root
 spring.datasource.password=
-spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
-spring.jpa.hibernate.ddl-auto=create
-spring.jpa.show-sql=true
-spring.jpa.properties.hibernate.format_sql=true
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
 
-# Configurações adicionais para garantir criação de tabelas
-spring.jpa.properties.hibernate.hbm2ddl.auto=create
-spring.jpa.properties.hibernate.use_sql_comments=true
+spring.jpa.database-platform=org.hibernate.dialect.MySQL8Dialect
+spring.jpa.hibernate.ddl-auto=validate
+spring.jpa.show-sql=false
+spring.jpa.properties.hibernate.jdbc.time_zone=America/Sao_Paulo
 
-# Forçar criação do schema na inicialização
-spring.jpa.properties.hibernate.hbm2ddl.create_namespaces=true
+app.jwt.secret=test-secret-key-for-onepilates-32b
+app.jwt.expiration-ms=86400000
 
-# Desabilitar segurança para testes (se necessário)
-# spring.security.enabled=false
+spring.rabbitmq.listener.simple.auto-startup=false
+spring.rabbitmq.listener.direct.auto-startup=false
 
+groq.api.key=test
+groq.model=openai/gpt-oss-120b
+groq.whisper.model=whisper-large-v3-turbo
+
+app.admin.email=
+app.admin.nome=
+app.admin.cpf=

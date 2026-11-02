@@ -1,7 +1,9 @@
 package com.onePilates.agendamento.auth.security;
 
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
 import com.onePilates.agendamento.model.Administrador;
+import com.onePilates.agendamento.model.Aluno;
 import com.onePilates.agendamento.model.Funcionario;
 import com.onePilates.agendamento.model.enums.Role;
 import io.jsonwebtoken.JwtException;
@@ -33,6 +35,9 @@ class JwtAuthFilterTest {
 
     @Mock
     private FuncionarioRepository funcionarioRepository;
+
+    @Mock
+    private AlunoRepository alunoRepository;
 
     @Mock
     private HttpServletRequest request;
@@ -217,6 +222,28 @@ class JwtAuthFilterTest {
         verify(jwtUtil).isTokenExpired(anyString());
         verify(filterChain).doFilter(request, response);
         assertNotNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    void doFilter_DeveAutenticarAluno_QuandoNaoExisteFuncionario() throws ServletException, IOException {
+        Aluno aluno = new Aluno();
+        aluno.setId(8L);
+        aluno.setEmail("aluno@teste.com");
+
+        when(request.getHeader("Authorization")).thenReturn("Bearer " + validToken);
+        when(jwtUtil.isTokenExpired(validToken)).thenReturn(false);
+        when(jwtUtil.extractEmail(validToken)).thenReturn("aluno@teste.com");
+        when(funcionarioRepository.findByEmail("aluno@teste.com")).thenReturn(Optional.empty());
+        when(alunoRepository.findByEmail("aluno@teste.com")).thenReturn(Optional.of(aluno));
+        when(jwtUtil.extractRole(validToken)).thenReturn("ALUNO");
+
+        jwtAuthFilter.doFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
+        assertNotNull(SecurityContextHolder.getContext().getAuthentication());
+        assertEquals("aluno@teste.com", SecurityContextHolder.getContext().getAuthentication().getName());
+        assertTrue(SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ALUNO")));
     }
 }
 

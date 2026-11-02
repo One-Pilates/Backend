@@ -2,12 +2,14 @@ package com.onePilates.agendamento.ia.tool;
 
 import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.model.Aluno;
+import com.onePilates.agendamento.model.enums.Role;
 import org.springframework.stereotype.Component;
 
 import java.text.Normalizer;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class BuscarAlunosTool implements FerramentaIA {
@@ -22,6 +24,11 @@ public class BuscarAlunosTool implements FerramentaIA {
 
     @Override
     public String nome() { return "buscar_alunos"; }
+
+    @Override
+    public Set<Role> rolesPermitidas() {
+        return Set.of(Role.ADMINISTRADOR, Role.SECRETARIA, Role.PROFESSOR);
+    }
 
     @Override
     public String descricao() {

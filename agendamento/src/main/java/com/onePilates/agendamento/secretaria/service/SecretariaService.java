@@ -12,6 +12,7 @@ import com.onePilates.agendamento.exception.BusinessException;
 import com.onePilates.agendamento.exception.CpfJaCadastradoException;
 import com.onePilates.agendamento.exception.EmailJaCadastradoException;
 import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
+import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.imagem.service.ImagemService;
 import com.onePilates.agendamento.model.Agendamento;
 import com.onePilates.agendamento.model.AgendamentoAluno;
@@ -61,6 +62,7 @@ public class SecretariaService {
     public Secretaria criarSecretaria(SecretariaDTO dto) {
         logger.info("Tentativa de criar secretária: {}", dto.getNome());
         try {
+            rejeitarRoleAluno(dto.getRole());
             if (secretariaRepository.existsByEmail(dto.getEmail())) {
                 throw new EmailJaCadastradoException("Email já cadastrado");
             }
@@ -198,6 +200,7 @@ public class SecretariaService {
                 secretaria.setTelefone(dto.getTelefone());
             }
             if (dto.getRole() != null) {
+                rejeitarRoleAluno(dto.getRole());
                 secretaria.setRole(dto.getRole());
             }
 
@@ -400,6 +403,12 @@ public class SecretariaService {
         resposta.setQtdDeAlunosAtendidos(qtdAlunosAtendidos);
 
         return resposta;
+    }
+
+    private void rejeitarRoleAluno(Role role) {
+        if (role == Role.ALUNO) {
+            throw new OperacaoInvalidaException("A role ALUNO não pode ser atribuída a este cadastro.");
+        }
     }
 
 }

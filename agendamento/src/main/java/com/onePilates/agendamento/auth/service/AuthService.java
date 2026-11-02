@@ -1,6 +1,7 @@
 package com.onePilates.agendamento.auth.service;
 
 import com.onePilates.agendamento.administrador.repository.AdministradorRepository;
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.auth.dto.LoginDTO;
 import com.onePilates.agendamento.auth.dto.LoginResponseDTO;
 import com.onePilates.agendamento.auth.dto.NovaSenhaResponseDTO;
@@ -18,6 +19,7 @@ import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.exception.PerfilInativoException;
 import com.onePilates.agendamento.funcionario.dto.FuncionarioLoginDTO;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
+import com.onePilates.agendamento.model.Aluno;
 import com.onePilates.agendamento.model.Funcionario;
 import com.onePilates.agendamento.model.Professor;
 import com.onePilates.agendamento.model.enums.Role;
@@ -34,6 +36,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 import java.util.stream.Collectors;
 
@@ -49,8 +52,9 @@ public class AuthService {
     private final FuncionarioRepository funcionarioRepository;
     private final JwtUtil jwtUtil;
     private final RabbitMQProducer rabbitMQ;
+    private final AlunoRepository alunoRepository;
 
-    public AuthService(AdministradorRepository administradorRepository, ProfessorRepository professorRepository, SecretariaRepository secretariaRepository, PasswordEncoder passwordEncoder, FuncionarioRepository funcionarioRepository, JwtUtil jwtUtil, RabbitMQProducer rabbitMQ) {
+    public AuthService(AdministradorRepository administradorRepository, ProfessorRepository professorRepository, SecretariaRepository secretariaRepository, PasswordEncoder passwordEncoder, FuncionarioRepository funcionarioRepository, JwtUtil jwtUtil, RabbitMQProducer rabbitMQ, AlunoRepository alunoRepository) {
         this.administradorRepository = administradorRepository;
         this.professorRepository = professorRepository;
         this.secretariaRepository = secretariaRepository;
@@ -58,16 +62,17 @@ public class AuthService {
         this.funcionarioRepository = funcionarioRepository;
         this.jwtUtil = jwtUtil;
         this.rabbitMQ = rabbitMQ;
+        this.alunoRepository = alunoRepository;
     }
 
     public LoginResponseDTO authenticate(LoginDTO request) {
         logger.info("Tentativa de autenticação para email: {}", request.getEmail());
         try {
-            Funcionario funcionario = buscarFuncionarioPorEmail(request.getEmail());
-
-            if (funcionario == null) {
-                throw new EntidadeNaoEncontradaException("Funcionário não encontrado");
+            Optional<Funcionario> encontrado = buscarFuncionarioOpcional(request.getEmail());
+            if (encontrado.isEmpty()) {
+                return autenticarAluno(request);
             }
+            Funcionario funcionario = encontrado.get();
 
             if (!passwordEncoder.matches(request.getSenha(), funcionario.getSenha())) {
                 throw new CredenciaisInvalidasException("Credenciais inválidas");
@@ -140,12 +145,45 @@ public class AuthService {
 
 
 
-    private Funcionario buscarFuncionarioPorEmail(String email) {
+    private Optional<Funcionario> buscarFuncionarioOpcional(String email) {
         return administradorRepository.findByEmail(email)
                 .map(f -> (Funcionario) f)
                 .or(() -> professorRepository.findByEmail(email).map(f -> (Funcionario) f))
-                .or(() -> secretariaRepository.findByEmail(email).map(f -> (Funcionario) f))
+                .or(() -> secretariaRepository.findByEmail(email).map(f -> (Funcionario) f));
+    }
+
+    private Funcionario buscarFuncionarioPorEmail(String email) {
+        return buscarFuncionarioOpcional(email)
                 .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário não encontrado"));
+    }
+
+    private LoginResponseDTO autenticarAluno(LoginDTO request) {
+        Aluno aluno = alunoRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário não encontrado"));
+        if (aluno.getSenha() == null || !passwordEncoder.matches(request.getSenha(), aluno.getSenha())) {
+            throw new CredenciaisInvalidasException("Credenciais inválidas");
+        }
+        if (aluno.getStatus() != null && !aluno.getStatus()) {
+            throw new PerfilInativoException("Perfil inativo, contate o administrador do sistema para reativação");
+        }
+        String token = jwtUtil.generateToken(aluno.getEmail(), Role.ALUNO);
+        FuncionarioLoginDTO alunoDTO = new FuncionarioLoginDTO(
+                aluno.getId(),
+                aluno.getNome(),
+                aluno.getEmail(),
+                Role.ALUNO,
+                aluno.getCpf(),
+                aluno.getDataNascimento(),
+                aluno.getStatus(),
+                aluno.getFoto(),
+                aluno.getObservacao(),
+                aluno.getNotificacaoAtiva(),
+                null,
+                aluno.getEndereco(),
+                aluno.getTipoContato(),
+                aluno.getPrimeiroAcesso()
+        );
+        return new LoginResponseDTO(token, Role.ALUNO.name(), alunoDTO);
     }
 
     @Transactional

@@ -21,5 +21,8 @@ public interface AgendamentoAlunoRepository extends JpaRepository<AgendamentoAlu
     
     @EntityGraph(attributePaths = {"agendamento", "aluno"})
     List<AgendamentoAluno> findByAgendamento(Agendamento agendamento);
+
+    @EntityGraph(attributePaths = {"agendamento", "agendamento.professor", "agendamento.sala", "agendamento.especialidade", "aluno"})
+    List<AgendamentoAluno> findByAlunoId(Long alunoId);
 }
 

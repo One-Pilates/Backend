@@ -30,6 +30,12 @@ public class Aluno {
 
     private String observacao;
 
+    private String senha;
+
+    private String foto;
+
+    private Boolean primeiroAcesso;
+
     @OneToOne(cascade = CascadeType.ALL)
     @JoinColumn(name = "endereco_id")
     private Endereco endereco;
@@ -125,5 +131,29 @@ public class Aluno {
 
     public void setObservacao(String observacao) {
         this.observacao = observacao;
+    }
+
+    public String getSenha() {
+        return senha;
+    }
+
+    public void setSenha(String senha) {
+        this.senha = senha;
+    }
+
+    public String getFoto() {
+        return foto;
+    }
+
+    public void setFoto(String foto) {
+        this.foto = foto;
+    }
+
+    public Boolean getPrimeiroAcesso() {
+        return primeiroAcesso;
+    }
+
+    public void setPrimeiroAcesso(Boolean primeiroAcesso) {
+        this.primeiroAcesso = primeiroAcesso;
     }
 }

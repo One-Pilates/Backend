@@ -1,5 +1,6 @@
 package com.onePilates.agendamento.ia.tool;
 
+import com.onePilates.agendamento.model.enums.Role;
 import com.onePilates.agendamento.professor.repository.ProfessorRepository;
 import com.onePilates.agendamento.sala.repository.SalaRepository;
 import org.springframework.stereotype.Component;
@@ -7,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class ListarProfessoresESalasTool implements FerramentaIA {
@@ -21,6 +23,11 @@ public class ListarProfessoresESalasTool implements FerramentaIA {
 
     @Override
     public String nome() { return "listar_professores_e_salas"; }
+
+    @Override
+    public Set<Role> rolesPermitidas() {
+        return Set.of(Role.ADMINISTRADOR, Role.SECRETARIA, Role.PROFESSOR);
+    }
 
     @Override
     public String descricao() { return "Lista professores e salas com id, nome e as especialidades que atendem. Use para descobrir ids e quais combinações são possíveis ao criar ou editar um agendamento."; }

@@ -1,5 +1,6 @@
 package com.onePilates.agendamento.config;
 
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.auth.security.JwtAuthFilter;
 import com.onePilates.agendamento.auth.security.JwtUtil;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
@@ -26,9 +27,12 @@ class SecurityConfigTest {
     @Mock
     private FuncionarioRepository funcionarioRepository;
 
+    @Mock
+    private AlunoRepository alunoRepository;
+
     @Test
     void passwordEncoder_DeveRetornarBCryptPasswordEncoder() {
-        SecurityConfig config = new SecurityConfig(jwtUtil, funcionarioRepository);
+        SecurityConfig config = new SecurityConfig(jwtUtil, funcionarioRepository, alunoRepository);
         PasswordEncoder encoder = config.passwordEncoder();
 
         assertNotNull(encoder);
@@ -37,7 +41,7 @@ class SecurityConfigTest {
 
     @Test
     void jwtAuthFilter_DeveRetornarJwtAuthFilter() {
-        SecurityConfig config = new SecurityConfig(jwtUtil, funcionarioRepository);
+        SecurityConfig config = new SecurityConfig(jwtUtil, funcionarioRepository, alunoRepository);
         JwtAuthFilter filter = config.jwtAuthFilter();
 
         assertNotNull(filter);
@@ -46,7 +50,7 @@ class SecurityConfigTest {
 
     @Test
     void corsConfigurationSource_DeveRetornarCorsConfigurationSource() {
-        SecurityConfig config = new SecurityConfig(jwtUtil, funcionarioRepository);
+        SecurityConfig config = new SecurityConfig(jwtUtil, funcionarioRepository, alunoRepository);
         CorsConfigurationSource corsSource = config.corsConfigurationSource();
 
         assertNotNull(corsSource);
@@ -55,7 +59,7 @@ class SecurityConfigTest {
 
     @Test
     void securityFilterChain_DeveRetornarSecurityFilterChain() throws Exception {
-        SecurityConfig config = new SecurityConfig(jwtUtil, funcionarioRepository);
+        SecurityConfig config = new SecurityConfig(jwtUtil, funcionarioRepository, alunoRepository);
         
         HttpSecurity http = mock(HttpSecurity.class, RETURNS_SELF);
         

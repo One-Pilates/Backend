@@ -3,11 +3,13 @@ package com.onePilates.agendamento.ia.tool;
 import com.onePilates.agendamento.agendamento.repository.AgendamentoAlunoRepository;
 import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.model.Aluno;
+import com.onePilates.agendamento.model.enums.Role;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class VerObservacoesAlunoTool implements FerramentaIA {
@@ -22,6 +24,11 @@ public class VerObservacoesAlunoTool implements FerramentaIA {
 
     @Override
     public String nome() { return "ver_observacoes_aluno"; }
+
+    @Override
+    public Set<Role> rolesPermitidas() {
+        return Set.of(Role.ADMINISTRADOR, Role.SECRETARIA, Role.PROFESSOR);
+    }
 
     @Override
     public String descricao() {

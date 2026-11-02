@@ -5,6 +5,9 @@ import com.onePilates.agendamento.agendamento.dto.AgendamentoDTO;
 import com.onePilates.agendamento.agendamento.repository.AgendamentoAlunoRepository;
 import com.onePilates.agendamento.agendamento.repository.AgendamentoRepository;
 import com.onePilates.agendamento.aluno.repository.AlunoRepository;
+import com.onePilates.agendamento.aluno.repository.CancelamentoAulaRepository;
+import com.onePilates.agendamento.aluno.repository.FeedbackAulaRepository;
+import com.onePilates.agendamento.aluno.repository.PacoteAulaRepository;
 import com.onePilates.agendamento.ausencia.repository.AusenciaRepository;
 import com.onePilates.agendamento.especialidade.repository.EspecialidadeRepository;
 import com.onePilates.agendamento.model.Aluno;
@@ -37,6 +40,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
+@Transactional
 @TestPropertySource(locations = "classpath:application-test.properties")
 class AgendamentoControllerIntegrationTest {
 
@@ -67,6 +71,15 @@ class AgendamentoControllerIntegrationTest {
     @Autowired
     private AusenciaRepository ausenciaRepository;
 
+    @Autowired
+    private PacoteAulaRepository pacoteAulaRepository;
+
+    @Autowired
+    private FeedbackAulaRepository feedbackAulaRepository;
+
+    @Autowired
+    private CancelamentoAulaRepository cancelamentoAulaRepository;
+
     private Professor professor;
     private Sala sala;
     private Especialidade especialidade;
@@ -80,6 +93,9 @@ class AgendamentoControllerIntegrationTest {
         agendamentoAlunoRepository.deleteAll();
         agendamentoRepository.deleteAll();
         ausenciaRepository.deleteAll();
+        pacoteAulaRepository.deleteAll();
+        feedbackAulaRepository.deleteAll();
+        cancelamentoAulaRepository.deleteAll();
         alunoRepository.deleteAll();
         salaRepository.deleteAll();
         professorRepository.deleteAll();
@@ -88,8 +104,8 @@ class AgendamentoControllerIntegrationTest {
         // Criar dados de teste
         professor = new Professor();
         professor.setNome("Professor Teste");
-        professor.setEmail("professor@teste.com");
-        professor.setCpf("12345678900");
+        professor.setEmail("professor.integracao@teste.com");
+        professor.setCpf("99900000001");
         professor.setStatus(true);
         professor.setSenha("senha123");
         professor = professorRepository.save(professor);
@@ -107,16 +123,16 @@ class AgendamentoControllerIntegrationTest {
 
         aluno1 = new Aluno();
         aluno1.setNome("Aluno 1");
-        aluno1.setEmail("aluno1@teste.com");
-        aluno1.setCpf("11111111111");
+        aluno1.setEmail("aluno1.integracao@teste.com");
+        aluno1.setCpf("99900000011");
         aluno1.setStatus(true);
         aluno1.setAlunoComLimitacoesFisicas(false);
         aluno1 = alunoRepository.save(aluno1);
 
         aluno2 = new Aluno();
         aluno2.setNome("Aluno 2");
-        aluno2.setEmail("aluno2@teste.com");
-        aluno2.setCpf("22222222222");
+        aluno2.setEmail("aluno2.integracao@teste.com");
+        aluno2.setCpf("99900000022");
         aluno2.setStatus(true);
         aluno2.setAlunoComLimitacoesFisicas(false);
         aluno2 = alunoRepository.save(aluno2);

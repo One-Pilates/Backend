@@ -30,6 +30,12 @@ public class AgendamentoAluno {
 
     private String observacao;
 
+    private Boolean creditoConsumido = Boolean.FALSE;
+
+    private Boolean presencaConfirmada = Boolean.FALSE;
+
+    private LocalDateTime dataConfirmacao;
+
     public AgendamentoAluno() {
     }
 
@@ -88,6 +94,30 @@ public class AgendamentoAluno {
 
     public void setObservacao(String observacao) {
         this.observacao = observacao;
+    }
+
+    public Boolean getCreditoConsumido() {
+        return creditoConsumido;
+    }
+
+    public void setCreditoConsumido(Boolean creditoConsumido) {
+        this.creditoConsumido = creditoConsumido;
+    }
+
+    public Boolean getPresencaConfirmada() {
+        return presencaConfirmada;
+    }
+
+    public void setPresencaConfirmada(Boolean presencaConfirmada) {
+        this.presencaConfirmada = presencaConfirmada;
+    }
+
+    public LocalDateTime getDataConfirmacao() {
+        return dataConfirmacao;
+    }
+
+    public void setDataConfirmacao(LocalDateTime dataConfirmacao) {
+        this.dataConfirmacao = dataConfirmacao;
     }
 }
 

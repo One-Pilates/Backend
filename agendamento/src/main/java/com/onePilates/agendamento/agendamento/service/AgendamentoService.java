@@ -1,5 +1,6 @@
 package com.onePilates.agendamento.agendamento.service;
 
+import com.onePilates.agendamento.aluno.service.PacoteAulaService;
 import com.onePilates.agendamento.agendamento.dto.AgendamentoDTO;
 import com.onePilates.agendamento.agendamento.dto.AgendamentoResponseDTO;
 import com.onePilates.agendamento.agendamento.observer.AgendamentoNotifier;
@@ -55,8 +56,9 @@ public class AgendamentoService {
     private final AgendamentoAlunoRepository agendamentoAlunoRepository;
     private final AgendamentoValidator agendamentoValidator;
     private final RabbitMQProducer rabbitMQ;
+    private final PacoteAulaService pacoteAulaService;
 
-    public AgendamentoService(AgendamentoRepository agendamentoRepository, ProfessorRepository professorRepository, SalaRepository salaRepository, EspecialidadeRepository especialidadeRepository, AlunoRepository alunoRepository, AgendamentoNotifier notifier, AgendamentoAlunoRepository agendamentoAlunoRepository, AgendamentoValidator agendamentoValidator, RabbitMQProducer rabbitMQ) {
+    public AgendamentoService(AgendamentoRepository agendamentoRepository, ProfessorRepository professorRepository, SalaRepository salaRepository, EspecialidadeRepository especialidadeRepository, AlunoRepository alunoRepository, AgendamentoNotifier notifier, AgendamentoAlunoRepository agendamentoAlunoRepository, AgendamentoValidator agendamentoValidator, RabbitMQProducer rabbitMQ, PacoteAulaService pacoteAulaService) {
         this.agendamentoRepository = agendamentoRepository;
         this.professorRepository = professorRepository;
         this.salaRepository = salaRepository;
@@ -66,6 +68,7 @@ public class AgendamentoService {
         this.agendamentoAlunoRepository = agendamentoAlunoRepository;
         this.agendamentoValidator = agendamentoValidator;
         this.rabbitMQ = rabbitMQ;
+        this.pacoteAulaService = pacoteAulaService;
     }
 
     /**
@@ -417,9 +420,19 @@ public class AgendamentoService {
                         .orElseThrow(() -> new EntidadeNaoEncontradaException("Sala não encontrada"));
                 agendamento.setSala(sala);
             }
+            if (dto.getAlunoIds() != null) {
+                for (AgendamentoAluno atual : new HashSet<>(agendamento.getAgendamentoAlunos())) {
+                    if (!dto.getAlunoIds().contains(atual.getAluno().getId())) {
+                        pacoteAulaService.estornar(atual);
+                    }
+                }
+            }
             if (dto.getEspecialidadeId() != null) {
                 Especialidade especialidade = especialidadeRepository.findById(dto.getEspecialidadeId())
                         .orElseThrow(() -> new EntidadeNaoEncontradaException("Especialidade não encontrada"));
+                if (!especialidade.getId().equals(agendamento.getEspecialidade().getId())) {
+                    pacoteAulaService.trocarEspecialidade(agendamento.getAgendamentoAlunos(), agendamento.getEspecialidade(), especialidade);
+                }
                 agendamento.setEspecialidade(especialidade);
             }
             if (dto.getAlunoIds() != null) {
@@ -568,6 +581,10 @@ public class AgendamentoService {
                 rabbitMQ.enviarPraFilaDeEmails(emailRequestDTO);
             }
 
+            for (AgendamentoAluno vinculo : agendamento.getAgendamentoAlunos()) {
+                pacoteAulaService.estornar(vinculo);
+            }
+
             for (Aluno aluno : agendamento.getAlunos()) {
                 System.out.println("Verificando notificação do aluno: " + aluno.getNome());
 
@@ -644,6 +661,7 @@ public class AgendamentoService {
                         .orElseThrow(() -> new EntidadeNaoEncontradaException("Aluno não encontrado no agendamento"));
                 
                 agendamentoAluno.setStatusPresenca(status);
+                pacoteAulaService.aplicarPresenca(agendamentoAluno);
                 agendamentoAlunoRepository.save(agendamentoAluno);
                 logger.debug("Presença registrada: Aluno ID {} - Status {}", alunoId, status);
             }

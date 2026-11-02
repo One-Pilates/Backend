@@ -3,6 +3,7 @@ package com.onePilates.agendamento.administrador.service;
 import com.onePilates.agendamento.administrador.dto.AdministradorDTO;
 import com.onePilates.agendamento.administrador.dto.AdministradorResponseDTO;
 import com.onePilates.agendamento.administrador.repository.AdministradorRepository;
+import com.onePilates.agendamento.email.service.RabbitMQProducer;
 import com.onePilates.agendamento.endereco.dto.EnderecoDTO;
 import com.onePilates.agendamento.endereco.repository.EnderecoRepository;
 import com.onePilates.agendamento.exception.CpfJaCadastradoException;
@@ -43,6 +44,9 @@ class AdministradorServiceTest {
 
     @Mock
     private ImagemService imagemService;
+
+    @Mock
+    private RabbitMQProducer rabbitMQProducer;
 
     @InjectMocks
     private AdministradorService administradorService;

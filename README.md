@@ -27,6 +27,7 @@ Backend robusto para gerenciamento de agendamentos, clientes, professores e func
 - API REST completa documentada
 - Fila de mensagens com RabbitMQ
 - Validações robustas de dados
+- Portal do aluno: agenda, presença, cancelamento, feedback, perfil, pacote e dashboard. Detalhes em [PORTAL_ALUNO.md](PORTAL_ALUNO.md).
 
 ## Requisitos
 - Java 17+

@@ -43,3 +43,6 @@ build/
 
 # Permitir arquivo de exemplo
 !.env.example
+
+# Senha do MySQL local fica só na máquina
+src/test/resources/application-test.properties

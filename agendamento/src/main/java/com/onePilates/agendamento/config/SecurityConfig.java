@@ -1,11 +1,14 @@
 package com.onePilates.agendamento.config;
 
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.auth.security.JwtAuthFilter;
 import com.onePilates.agendamento.auth.security.JwtUtil;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -24,10 +27,12 @@ public class SecurityConfig {
 
     private final JwtUtil jwtUtil;
     private final FuncionarioRepository funcionarioRepository;
+    private final AlunoRepository alunoRepository;
 
-    public SecurityConfig(JwtUtil jwtUtil, FuncionarioRepository funcionarioRepository) {
+    public SecurityConfig(JwtUtil jwtUtil, FuncionarioRepository funcionarioRepository, AlunoRepository alunoRepository) {
         this.jwtUtil = jwtUtil;
         this.funcionarioRepository = funcionarioRepository;
+        this.alunoRepository = alunoRepository;
     }
 
     @Bean
@@ -37,7 +42,7 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthFilter jwtAuthFilter() {
-        return new JwtAuthFilter(jwtUtil, funcionarioRepository);
+        return new JwtAuthFilter(jwtUtil, funcionarioRepository, alunoRepository);
     }
 
     @Bean
@@ -76,6 +81,7 @@ public class SecurityConfig {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(csrf -> csrf.disable())
+                .exceptionHandling(ex -> ex.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)))
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/auth/**").permitAll()

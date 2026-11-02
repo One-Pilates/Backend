@@ -25,6 +25,10 @@ public class ImagemService {
         return uploadFoto(file, administradorId, "administradores");
     }
 
+    public String uploadFotoAluno(MultipartFile file, Long alunoId) {
+        return uploadFoto(file, alunoId, "alunos");
+    }
+
     private String uploadFoto(MultipartFile file, Long entidadeId, String pasta) {
         try {
             if (file == null || file.isEmpty()) {
