@@ -6,8 +6,28 @@ public class AulaCanceladaAlunoEmailDTO {
     private String dataHoraAgendamento;
     private String nomeSala;
     private String nomeEspecialidade;
+    /** true quando o próprio aluno cancelou pelo portal; false quando foi a equipe. */
+    private Boolean canceladoPeloAluno;
+    /** Se a aula voltou ao pacote do aluno (nulo quando ele não tinha pacote debitado). */
+    private Boolean aulaDevolvidaAoPacote;
 
     public AulaCanceladaAlunoEmailDTO() {
+    }
+
+    public Boolean getCanceladoPeloAluno() {
+        return canceladoPeloAluno;
+    }
+
+    public void setCanceladoPeloAluno(Boolean canceladoPeloAluno) {
+        this.canceladoPeloAluno = canceladoPeloAluno;
+    }
+
+    public Boolean getAulaDevolvidaAoPacote() {
+        return aulaDevolvidaAoPacote;
+    }
+
+    public void setAulaDevolvidaAoPacote(Boolean aulaDevolvidaAoPacote) {
+        this.aulaDevolvidaAoPacote = aulaDevolvidaAoPacote;
     }
 
     public String getNomeAluno() {

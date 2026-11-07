@@ -113,7 +113,8 @@ public class CriarAgendamentoTool implements FerramentaIA {
                     "sala", ArgumentosTool.texto(criado.getSala().getNome()),
                     "especialidade", ArgumentosTool.texto(criado.getEspecialidade().getNome()),
                     "alunos", criado.getAgendamentoAlunos().stream()
-                            .map(aa -> ArgumentosTool.texto(aa.getAluno().getNome())).toList());
+                            .map(aa -> ArgumentosTool.texto(aa.getAluno().getNome())).toList(),
+                    "avisosPacote", agendamentoService.avisosDePacote(criado));
         });
     }
 }

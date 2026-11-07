@@ -15,6 +15,7 @@ import com.onePilates.agendamento.especialidade.repository.EspecialidadeReposito
 import com.onePilates.agendamento.exception.BusinessException;
 import com.onePilates.agendamento.exception.CampoObrigatorioException;
 import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
+import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.imagem.service.ImagemService;
 import com.onePilates.agendamento.model.Agendamento;
 import com.onePilates.agendamento.model.AgendamentoAluno;
@@ -98,6 +99,7 @@ public class ProfessorService {
         logger.info("Tentativa de criar professor: {}", dto.getNome());
         try {
             // fluxo padrão: aceita dto.role se presente, mas endpoint público deve forçar PROFESSOR
+            rejeitarRoleAluno(dto.getRole());
             Role roleToSet = dto.getRole() != null ? dto.getRole() : Role.PROFESSOR;
             ProfessorResponseDTO response = criarProfessorInterno(dto, roleToSet);
             logger.info("Professor criado com sucesso. ID: {}", response.getId());
@@ -111,6 +113,13 @@ public class ProfessorService {
         }
     }
 
+
+    /** A role ALUNO pertence ao portal do aluno; não pode ser atribuída a um funcionário. */
+    private void rejeitarRoleAluno(Role role) {
+        if (role == Role.ALUNO) {
+            throw new OperacaoInvalidaException("O perfil ALUNO não pode ser atribuído a um funcionário.");
+        }
+    }
 
     private ProfessorResponseDTO criarProfessorInterno(ProfessorDTO dto, Role roleToSet) {
 
@@ -250,6 +259,7 @@ public class ProfessorService {
             }
 
             if (dto.getRole() != null) {
+                rejeitarRoleAluno(dto.getRole());
                 existente.setRole(dto.getRole()); // se quiser proteger alteração de role, aplique checagem adicional
             }
 

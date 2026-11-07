@@ -33,7 +33,7 @@ public class AgendamentoController {
     @PostMapping
     @PreAuthorize("hasAnyAuthority('ADMINISTRADOR', 'SECRETARIA')")
     public ResponseEntity<AgendamentoResponseDTO> criarAgendamento( @Valid @RequestBody AgendamentoDTO dto) {
-        return ResponseEntity.ok(agendamentoService.toResponseDTO(agendamentoService.criarAgendamento(dto)));
+        return ResponseEntity.ok(agendamentoService.toResponseDTOComAvisos(agendamentoService.criarAgendamento(dto)));
     }
 
     /**
@@ -42,7 +42,7 @@ public class AgendamentoController {
     @PostMapping("/absoluto")
     @PreAuthorize("hasAnyAuthority('ADMINISTRADOR', 'SECRETARIA')")
     public ResponseEntity<AgendamentoResponseDTO> criarAgendamentoAbsoluto(@RequestBody AgendamentoDTO dto){
-        return ResponseEntity.ok(agendamentoService.toResponseDTO(agendamentoService.criarAgendamentoAbsoluto(dto)));
+        return ResponseEntity.ok(agendamentoService.toResponseDTOComAvisos(agendamentoService.criarAgendamentoAbsoluto(dto)));
     }
     /**
      * Lista todos os agendamentos cadastrados.

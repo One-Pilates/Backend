@@ -1,6 +1,7 @@
 package com.onePilates.agendamento.auth.service;
 
 import com.onePilates.agendamento.administrador.repository.AdministradorRepository;
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.auth.dto.LoginDTO;
 import com.onePilates.agendamento.auth.dto.LoginResponseDTO;
 import com.onePilates.agendamento.auth.dto.NovaSenhaResponseDTO;
@@ -18,6 +19,7 @@ import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.exception.PerfilInativoException;
 import com.onePilates.agendamento.funcionario.dto.FuncionarioLoginDTO;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
+import com.onePilates.agendamento.model.Aluno;
 import com.onePilates.agendamento.model.Funcionario;
 import com.onePilates.agendamento.model.Professor;
 import com.onePilates.agendamento.model.enums.Role;
@@ -26,6 +28,7 @@ import com.onePilates.agendamento.professor.repository.ProfessorRepository;
 import com.onePilates.agendamento.secretaria.repository.SecretariaRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,6 +37,7 @@ import java.nio.file.Paths;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.Random;
 import java.util.stream.Collectors;
 
@@ -49,8 +53,15 @@ public class AuthService {
     private final FuncionarioRepository funcionarioRepository;
     private final JwtUtil jwtUtil;
     private final RabbitMQProducer rabbitMQ;
+    private final AlunoRepository alunoRepository;
 
     public AuthService(AdministradorRepository administradorRepository, ProfessorRepository professorRepository, SecretariaRepository secretariaRepository, PasswordEncoder passwordEncoder, FuncionarioRepository funcionarioRepository, JwtUtil jwtUtil, RabbitMQProducer rabbitMQ) {
+        this(administradorRepository, professorRepository, secretariaRepository, passwordEncoder, funcionarioRepository, jwtUtil, rabbitMQ, null);
+    }
+
+    @Autowired
+    public AuthService(AdministradorRepository administradorRepository, ProfessorRepository professorRepository, SecretariaRepository secretariaRepository, PasswordEncoder passwordEncoder, FuncionarioRepository funcionarioRepository, JwtUtil jwtUtil, RabbitMQProducer rabbitMQ, AlunoRepository alunoRepository) {
+        this.alunoRepository = alunoRepository;
         this.administradorRepository = administradorRepository;
         this.professorRepository = professorRepository;
         this.secretariaRepository = secretariaRepository;
@@ -63,11 +74,12 @@ public class AuthService {
     public LoginResponseDTO authenticate(LoginDTO request) {
         logger.info("Tentativa de autenticação para email: {}", request.getEmail());
         try {
-            Funcionario funcionario = buscarFuncionarioPorEmail(request.getEmail());
-
-            if (funcionario == null) {
-                throw new EntidadeNaoEncontradaException("Funcionário não encontrado");
+            Optional<Funcionario> encontrado = buscarFuncionarioOpcional(request.getEmail());
+            if (encontrado.isEmpty()) {
+                // não é funcionário: tenta como aluno (lança "não encontrado" se também não for)
+                return autenticarAluno(request);
             }
+            Funcionario funcionario = encontrado.get();
 
             if (!passwordEncoder.matches(request.getSenha(), funcionario.getSenha())) {
                 throw new CredenciaisInvalidasException("Credenciais inválidas");
@@ -140,18 +152,65 @@ public class AuthService {
 
 
 
-    private Funcionario buscarFuncionarioPorEmail(String email) {
+    private Optional<Funcionario> buscarFuncionarioOpcional(String email) {
         return administradorRepository.findByEmail(email)
                 .map(f -> (Funcionario) f)
                 .or(() -> professorRepository.findByEmail(email).map(f -> (Funcionario) f))
-                .or(() -> secretariaRepository.findByEmail(email).map(f -> (Funcionario) f))
+                .or(() -> secretariaRepository.findByEmail(email).map(f -> (Funcionario) f));
+    }
+
+    private Funcionario buscarFuncionarioPorEmail(String email) {
+        return buscarFuncionarioOpcional(email)
                 .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário não encontrado"));
+    }
+
+    private Aluno buscarAlunoPorEmail(String email) {
+        if (alunoRepository == null) {
+            throw new EntidadeNaoEncontradaException("Usuário não encontrado");
+        }
+        return alunoRepository.findByEmail(email)
+                .orElseThrow(() -> new EntidadeNaoEncontradaException("Usuário não encontrado"));
+    }
+
+    /** Login do aluno: mesma resposta do funcionário, com perfil ALUNO e sem as observações internas. */
+    private LoginResponseDTO autenticarAluno(LoginDTO request) {
+        Aluno aluno = buscarAlunoPorEmail(request.getEmail());
+
+        if (aluno.getSenha() == null || !passwordEncoder.matches(request.getSenha(), aluno.getSenha())) {
+            throw new CredenciaisInvalidasException("Credenciais inválidas");
+        }
+        if (!Boolean.TRUE.equals(aluno.getStatus())) {
+            throw new PerfilInativoException("Perfil inativo, contate o administrador do sistema para reativação");
+        }
+
+        String token = jwtUtil.generateToken(aluno.getEmail(), Role.ALUNO);
+        FuncionarioLoginDTO alunoDTO = new FuncionarioLoginDTO(
+                aluno.getId(),
+                aluno.getNome(),
+                aluno.getEmail(),
+                Role.ALUNO,
+                aluno.getCpf(),
+                aluno.getDataNascimento(),
+                aluno.getStatus(),
+                null,
+                null,
+                aluno.getNotificacaoAtiva(),
+                null,
+                aluno.getEndereco(),
+                aluno.getTipoContato(),
+                aluno.getPrimeiroAcesso()
+        );
+        logger.info("Autenticação de aluno bem-sucedida para email: {}", request.getEmail());
+        return new LoginResponseDTO(token, Role.ALUNO.name(), alunoDTO);
     }
 
     @Transactional
     public String criarCodigoVerificacao(String email) {
         logger.info("Tentativa de criar código de verificação para email: {}", email);
         try {
+            if (buscarFuncionarioOpcional(email).isEmpty()) {
+                return criarCodigoVerificacaoAluno(email);
+            }
             Funcionario funcionario = buscarFuncionarioPorEmail(email);
 
             String codigoVerificacao = String.format("%05d", new Random().nextInt(100000));
@@ -188,9 +247,49 @@ public class AuthService {
     }
 
 
+    private String criarCodigoVerificacaoAluno(String email) {
+        Aluno aluno = buscarAlunoPorEmail(email);
+
+        String codigoVerificacao = String.format("%05d", new Random().nextInt(100000));
+        aluno.setCodigoVerificacao(codigoVerificacao);
+        aluno.setDataUltimaCriacaoCodigo(LocalDateTime.now());
+        alunoRepository.save(aluno);
+
+        CodigoAcessoEmailDTO codigoAcessoEmailDTO = new CodigoAcessoEmailDTO();
+        codigoAcessoEmailDTO.setCodigo(codigoVerificacao);
+        codigoAcessoEmailDTO.setNomeFuncionario(aluno.getNome());
+
+        EmailRequestDTO emailRequestDTO = new EmailRequestDTO();
+        emailRequestDTO.setPayload(codigoAcessoEmailDTO);
+        emailRequestDTO.setTypeEmail(TipoEmail.CODIGO_ACESSO);
+        emailRequestDTO.setDestinatario(aluno.getEmail());
+
+        try {
+            rabbitMQ.enviarPraFilaDeEmails(emailRequestDTO);
+        } catch (Exception e) {
+            throw new OperacaoInvalidaException("Erro ao enviar o e-mail de verificação para a fila de emails.");
+        }
+        return "Código enviado para o seu e-mail.";
+    }
+
+    private Boolean validarCodigoVerificacaoAluno(String email, String codigoVerificacao) {
+        Aluno aluno = buscarAlunoPorEmail(email);
+
+        if (aluno.getCodigoVerificacao() == null || !aluno.getCodigoVerificacao().equals(codigoVerificacao)) {
+            throw new CodigoInvalidoException("Código inválido");
+        }
+        if (Duration.between(aluno.getDataUltimaCriacaoCodigo(), LocalDateTime.now()).toMinutes() > 5) {
+            throw new CodigoExpiradoException("Código expirado");
+        }
+        return true;
+    }
+
     public Boolean validarCodigoVerificacao(String email, String codigoVerificacao) {
         logger.info("Tentativa de validar código de verificação para email: {}", email);
         try {
+            if (buscarFuncionarioOpcional(email).isEmpty()) {
+                return validarCodigoVerificacaoAluno(email, codigoVerificacao);
+            }
             Funcionario funcionario = buscarFuncionarioPorEmail(email);
 
             if (!funcionario.getCodigoVerificacao().equals(codigoVerificacao)) {
@@ -219,11 +318,17 @@ public class AuthService {
     public NovaSenhaResponseDTO novaSenha(String senha, String email) {
         logger.info("Tentativa de alterar senha para email: {}", email);
         try {
-            Funcionario funcionario = buscarFuncionarioPorEmail(email);
-            if (funcionario == null) {
-                throw new EntidadeNaoEncontradaException("Funcionário não encontrado");
+            if (buscarFuncionarioOpcional(email).isEmpty()) {
+                Aluno aluno = buscarAlunoPorEmail(email);
+                aluno.setPrimeiroAcesso(false);
+                aluno.setSenha(passwordEncoder.encode(senha));
+                alunoRepository.save(aluno);
+                NovaSenhaResponseDTO respostaAluno = new NovaSenhaResponseDTO();
+                respostaAluno.setMensagem("Senha alterada com sucesso");
+                return respostaAluno;
             }
-            if(funcionario.getPrimeiroAcesso().equals(true)){
+            Funcionario funcionario = buscarFuncionarioPorEmail(email);
+            if (Boolean.TRUE.equals(funcionario.getPrimeiroAcesso())) {
                 funcionario.setPrimeiroAcesso(false);
             }
             funcionario.setSenha(passwordEncoder.encode(senha));

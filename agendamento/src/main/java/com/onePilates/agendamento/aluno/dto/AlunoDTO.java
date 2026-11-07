@@ -15,6 +15,16 @@ public class AlunoDTO {
     private Boolean notificacaoAtiva;
     private String observacao;
     private EnderecoDTO endereco;
+    /** Senha provisória do portal do aluno. Obrigatória na criação; é enviada por e-mail. */
+    private String senha;
+
+    public String getSenha() {
+        return senha;
+    }
+
+    public void setSenha(String senha) {
+        this.senha = senha;
+    }
 
     public String getNome() {
         return nome;

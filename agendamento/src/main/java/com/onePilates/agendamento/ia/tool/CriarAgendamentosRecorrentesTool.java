@@ -140,6 +140,7 @@ public class CriarAgendamentosRecorrentesTool implements FerramentaIA {
         // cada criação tem a própria transação (no service): uma recusa não desfaz as que deram certo
         List<String> criadas = new ArrayList<>();
         List<Map<String, Object>> falhas = new ArrayList<>();
+        List<String> avisosPacote = List.of();
         for (LocalDateTime dataHora : datas) {
             AgendamentoDTO dto = new AgendamentoDTO();
             dto.setDataHora(dataHora);
@@ -148,8 +149,10 @@ public class CriarAgendamentosRecorrentesTool implements FerramentaIA {
             dto.setEspecialidadeId(especialidadeId);
             dto.setAlunoIds(new HashSet<>(alunoIds));
             try {
-                agendamentoService.criarAgendamento(dto);
+                Long criadoId = agendamentoService.criarAgendamento(dto).getId();
                 criadas.add(dataHora.toString());
+                // o aviso da última aula criada já reflete o saldo final de cada aluno
+                avisosPacote = agendamentoService.avisosDePacote(criadoId);
             } catch (ValidacaoMultiplaException e) {
                 falhas.add(Map.of("data", dataHora.toString(), "motivos", e.getErros()));
             } catch (BusinessException e) {
@@ -167,7 +170,8 @@ public class CriarAgendamentosRecorrentesTool implements FerramentaIA {
                 "totalCriadas", criadas.size(),
                 "totalComErro", falhas.size(),
                 "criadas", criadas,
-                "falhas", falhas);
+                "falhas", falhas,
+                "avisosPacote", avisosPacote);
     }
 
     /** Aceita "quinta", "QUINTA", "quinta-feira", "Thursday"... */
