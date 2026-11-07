@@ -12,6 +12,7 @@ import com.onePilates.agendamento.exception.BusinessException;
 import com.onePilates.agendamento.exception.CpfJaCadastradoException;
 import com.onePilates.agendamento.exception.EmailJaCadastradoException;
 import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
+import com.onePilates.agendamento.exception.OperacaoInvalidaException;
 import com.onePilates.agendamento.imagem.service.ImagemService;
 import com.onePilates.agendamento.model.Agendamento;
 import com.onePilates.agendamento.model.AgendamentoAluno;
@@ -57,6 +58,13 @@ public class SecretariaService {
         this.agendamentoRepository = agendamentoRepository;
     }
 
+    /** A role ALUNO pertence ao portal do aluno; não pode ser atribuída a um funcionário. */
+    private void rejeitarRoleAluno(Role role) {
+        if (role == Role.ALUNO) {
+            throw new OperacaoInvalidaException("O perfil ALUNO não pode ser atribuído a um funcionário.");
+        }
+    }
+
     @Transactional
     public Secretaria criarSecretaria(SecretariaDTO dto) {
         logger.info("Tentativa de criar secretária: {}", dto.getNome());
@@ -78,6 +86,7 @@ public class SecretariaService {
             secretaria.setNotificacaoAtiva(dto.getNotificacaoAtiva());
             secretaria.setSenha(passwordEncoder.encode(dto.getSenha()));
             secretaria.setCargo(dto.getCargo());
+            rejeitarRoleAluno(dto.getRole());
             secretaria.setRole(dto.getRole() != null ? dto.getRole() : Role.SECRETARIA);
             secretaria.setTelefone(dto.getTelefone());
             secretaria.setPrimeiroAcesso(true);
@@ -198,6 +207,7 @@ public class SecretariaService {
                 secretaria.setTelefone(dto.getTelefone());
             }
             if (dto.getRole() != null) {
+                rejeitarRoleAluno(dto.getRole());
                 secretaria.setRole(dto.getRole());
             }
 

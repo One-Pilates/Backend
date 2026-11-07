@@ -12,6 +12,7 @@ import com.onePilates.agendamento.email.dto.AulaAtualizadaEmailDTO;
 import com.onePilates.agendamento.email.dto.AulaCanceladaAlunoEmailDTO;
 import com.onePilates.agendamento.email.dto.AulaCanceladaEmailDTO;
 import com.onePilates.agendamento.email.dto.AulaCriadaEmailDTO;
+import com.onePilates.agendamento.email.dto.AulaMarcadaAlunoEmailDTO;
 import com.onePilates.agendamento.email.dto.EmailRequestDTO;
 import com.onePilates.agendamento.email.service.RabbitMQProducer;
 import com.onePilates.agendamento.especialidade.repository.EspecialidadeRepository;
@@ -26,8 +27,10 @@ import com.onePilates.agendamento.model.Aluno;
 import com.onePilates.agendamento.model.Especialidade;
 import com.onePilates.agendamento.model.Professor;
 import com.onePilates.agendamento.model.Sala;
+import com.onePilates.agendamento.model.enums.MotivoMovimentoPacote;
 import com.onePilates.agendamento.model.enums.StatusPresenca;
 import com.onePilates.agendamento.model.enums.TipoEmail;
+import com.onePilates.agendamento.pacote.service.PacoteAulaService;
 import com.onePilates.agendamento.professor.repository.ProfessorRepository;
 import com.onePilates.agendamento.sala.repository.SalaRepository;
 import jakarta.validation.constraints.Email;
@@ -55,8 +58,10 @@ public class AgendamentoService {
     private final AgendamentoAlunoRepository agendamentoAlunoRepository;
     private final AgendamentoValidator agendamentoValidator;
     private final RabbitMQProducer rabbitMQ;
+    private final PacoteAulaService pacoteService;
 
-    public AgendamentoService(AgendamentoRepository agendamentoRepository, ProfessorRepository professorRepository, SalaRepository salaRepository, EspecialidadeRepository especialidadeRepository, AlunoRepository alunoRepository, AgendamentoNotifier notifier, AgendamentoAlunoRepository agendamentoAlunoRepository, AgendamentoValidator agendamentoValidator, RabbitMQProducer rabbitMQ) {
+    public AgendamentoService(AgendamentoRepository agendamentoRepository, ProfessorRepository professorRepository, SalaRepository salaRepository, EspecialidadeRepository especialidadeRepository, AlunoRepository alunoRepository, AgendamentoNotifier notifier, AgendamentoAlunoRepository agendamentoAlunoRepository, AgendamentoValidator agendamentoValidator, RabbitMQProducer rabbitMQ, PacoteAulaService pacoteService) {
+        this.pacoteService = pacoteService;
         this.agendamentoRepository = agendamentoRepository;
         this.professorRepository = professorRepository;
         this.salaRepository = salaRepository;
@@ -100,6 +105,8 @@ public class AgendamentoService {
             agendamento = agendamentoRepository.findById(agendamento.getId())
                     .orElseThrow(() -> new EntidadeNaoEncontradaException("Erro ao recarregar agendamento"));
 
+            registrarAlunosNaAula(agendamento, agendamento.getAgendamentoAlunos());
+
             Professor professor = agendamento.getProfessor();
             if (Boolean.TRUE.equals(professor.getNotificacaoAtiva())) {
                 notifier.notificarTodos(agendamento);
@@ -139,6 +146,8 @@ public class AgendamentoService {
             // Recarregar o agendamento com todas as relações para o observer
             agendamento = agendamentoRepository.findById(agendamento.getId())
                     .orElseThrow(() -> new EntidadeNaoEncontradaException("Erro ao recarregar agendamento"));
+
+            registrarAlunosNaAula(agendamento, agendamento.getAgendamentoAlunos());
 
             Professor professor = agendamento.getProfessor();
 
@@ -373,7 +382,9 @@ public class AgendamentoService {
             // Guardar professor antigo para detectar troca
             Professor professorAntigo = agendamento.getProfessor();
             Long professorIdAntigo = professorAntigo.getId();
-            
+            // A especialidade antiga é necessária para devolver aulas ao pacote certo se ela mudar
+            Especialidade especialidadeAntiga = agendamento.getEspecialidade();
+
             // Criar DTO temporário com dados do agendamento existente para validação
             AgendamentoDTO dtoValidacao = new AgendamentoDTO();
             LocalDateTime dataHoraValidacao = dto.getDataHora() != null ? dto.getDataHora() : agendamento.getDataHora();
@@ -422,18 +433,26 @@ public class AgendamentoService {
                         .orElseThrow(() -> new EntidadeNaoEncontradaException("Especialidade não encontrada"));
                 agendamento.setEspecialidade(especialidade);
             }
+            List<AgendamentoAluno> alunosRemovidos = new ArrayList<>();
+            List<AgendamentoAluno> alunosNovos = new ArrayList<>();
             if (dto.getAlunoIds() != null) {
                 // Atualizar alunos mantendo a mesma instância da coleção (importante para orphanRemoval)
                 Set<Long> novosAlunoIds = dto.getAlunoIds();
                 Set<AgendamentoAluno> agendamentoAlunosAtuais = agendamento.getAgendamentoAlunos();
-                
+
                 // Criar um mapa dos alunos atuais por ID para facilitar a busca
                 Map<Long, AgendamentoAluno> alunosAtuaisPorId = agendamentoAlunosAtuais.stream()
                         .collect(Collectors.toMap(aa -> aa.getAluno().getId(), aa -> aa));
-                
-                // Remover alunos que não estão mais na lista
-                agendamentoAlunosAtuais.removeIf(aa -> !novosAlunoIds.contains(aa.getAluno().getId()));
-                
+
+                // Remover alunos que não estão mais na lista (guardando-os para devolver a aula ao pacote)
+                agendamentoAlunosAtuais.removeIf(aa -> {
+                    boolean removido = !novosAlunoIds.contains(aa.getAluno().getId());
+                    if (removido) {
+                        alunosRemovidos.add(aa);
+                    }
+                    return removido;
+                });
+
                 // Buscar todos os alunos novos
                 List<Aluno> alunos = alunoRepository.findAllById(novosAlunoIds);
                 
@@ -442,10 +461,14 @@ public class AgendamentoService {
                     if (!alunosAtuaisPorId.containsKey(aluno.getId())) {
                         AgendamentoAluno novoAgendamentoAluno = new AgendamentoAluno(agendamento, aluno);
                         agendamentoAlunosAtuais.add(novoAgendamentoAluno);
+                        alunosNovos.add(novoAgendamentoAluno);
                     }
                 }
             }
-            
+
+            // Pacote de aulas: devolve a quem saiu, ajusta se a especialidade mudou e debita quem entrou
+            ajustarPacotesNaAtualizacao(agendamento, especialidadeAntiga, alunosRemovidos, alunosNovos);
+
             // Salvar o agendamento antes de notificar
             Agendamento agendamentoSalvo = agendamentoRepository.save(agendamento);
             
@@ -522,6 +545,7 @@ public class AgendamentoService {
             }
             
             AgendamentoResponseDTO response = toResponseDTO(agendamentoSalvo);
+            response.setAvisos(avisosDePacote(agendamentoSalvo));
             logger.info("Agendamento atualizado com sucesso. ID: {}", agendamentoId);
             return response;
         } catch (BusinessException e) {
@@ -568,6 +592,13 @@ public class AgendamentoService {
                 rabbitMQ.enviarPraFilaDeEmails(emailRequestDTO);
             }
 
+            // Aula excluída pela equipe: a aula volta ao pacote de quem a tinha consumido
+            Map<Long, Boolean> aulaDevolvida = new HashMap<>();
+            for (AgendamentoAluno vinculo : agendamento.getAgendamentoAlunos()) {
+                aulaDevolvida.put(vinculo.getAluno().getId(),
+                        pacoteService.devolver(vinculo, MotivoMovimentoPacote.DEVOLUCAO_EQUIPE));
+            }
+
             for (Aluno aluno : agendamento.getAlunos()) {
                 System.out.println("Verificando notificação do aluno: " + aluno.getNome());
 
@@ -579,6 +610,8 @@ public class AgendamentoService {
                     aulaCanceladaAlunoEmailDTO.setDataHoraAgendamento(agendamento.getDataHora().toString());
                     aulaCanceladaAlunoEmailDTO.setNomeEspecialidade(agendamento.getEspecialidade().getNome());
                     aulaCanceladaAlunoEmailDTO.setNomeSala(agendamento.getSala().getNome());
+                    aulaCanceladaAlunoEmailDTO.setCanceladoPeloAluno(false);
+                    aulaCanceladaAlunoEmailDTO.setAulaDevolvidaAoPacote(aulaDevolvida.get(aluno.getId()));
 
                     EmailRequestDTO emailRequestDTO = new EmailRequestDTO();
                     emailRequestDTO.setTypeEmail(TipoEmail.AULA_CANCELADA_ALUNO);
@@ -670,6 +703,84 @@ public class AgendamentoService {
             return null;
         }
         return dataHora.withMinute(0).withSecond(0).withNano(0);
+    }
+
+    /**
+     * Aluno(s) colocado(s) em uma aula: debita 1 aula do pacote da especialidade de cada um e envia o
+     * e-mail "aula marcada". Agendar além do pacote não é bloqueado; o aviso sai em {@link #avisosDePacote}.
+     */
+    private void registrarAlunosNaAula(Agendamento agendamento, Collection<AgendamentoAluno> vinculos) {
+        if (vinculos.isEmpty()) {
+            return;
+        }
+        for (AgendamentoAluno vinculo : vinculos) {
+            pacoteService.debitar(vinculo);
+        }
+        for (AgendamentoAluno vinculo : vinculos) {
+            notificarAlunoAulaMarcada(agendamento, vinculo.getAluno());
+        }
+    }
+
+    /**
+     * Mantém o pacote coerente quando uma aula existente muda: quem foi retirado recebe a aula de volta,
+     * se a especialidade mudou quem ficou é devolvido na antiga e debitado na nova, e quem entrou é debitado.
+     */
+    private void ajustarPacotesNaAtualizacao(Agendamento agendamento, Especialidade especialidadeAntiga,
+                                             List<AgendamentoAluno> removidos, List<AgendamentoAluno> novos) {
+        for (AgendamentoAluno removido : removidos) {
+            pacoteService.devolver(removido, especialidadeAntiga, MotivoMovimentoPacote.DEVOLUCAO_EQUIPE);
+        }
+        boolean especialidadeMudou = !especialidadeAntiga.getId().equals(agendamento.getEspecialidade().getId());
+        if (especialidadeMudou) {
+            for (AgendamentoAluno vinculo : agendamento.getAgendamentoAlunos()) {
+                if (!novos.contains(vinculo)
+                        && pacoteService.devolver(vinculo, especialidadeAntiga, MotivoMovimentoPacote.DEVOLUCAO_EQUIPE)) {
+                    pacoteService.debitar(vinculo);
+                }
+            }
+        }
+        registrarAlunosNaAula(agendamento, novos);
+    }
+
+    /** Falha no envio do e-mail não pode impedir o agendamento: só registra no log. */
+    private void notificarAlunoAulaMarcada(Agendamento agendamento, Aluno aluno) {
+        if (!Boolean.TRUE.equals(aluno.getNotificacaoAtiva()) || aluno.getEmail() == null || aluno.getEmail().isBlank()) {
+            return;
+        }
+        try {
+            AulaMarcadaAlunoEmailDTO payload = new AulaMarcadaAlunoEmailDTO();
+            payload.setNomeAluno(aluno.getNome());
+            payload.setNomeProfessor(agendamento.getProfessor().getNome());
+            payload.setNomeSala(agendamento.getSala().getNome());
+            payload.setNomeEspecialidade(agendamento.getEspecialidade().getNome());
+            payload.setDataHoraAgendamento(agendamento.getDataHora().toString());
+
+            EmailRequestDTO email = new EmailRequestDTO();
+            email.setTypeEmail(TipoEmail.AULA_MARCADA_ALUNO);
+            email.setDestinatario(aluno.getEmail());
+            email.setPayload(payload);
+            rabbitMQ.enviarPraFilaDeEmails(email);
+        } catch (Exception e) {
+            logger.warn("Não foi possível enfileirar o e-mail de aula marcada para o aluno {}: {}", aluno.getId(), e.getMessage());
+        }
+    }
+
+    /** Avisos para quem agenda: alunos desta aula que estão além do pacote da especialidade. */
+    public List<String> avisosDePacote(Agendamento agendamento) {
+        return pacoteService.avisosDeExcedente(agendamento.getAgendamentoAlunos());
+    }
+
+    /** Mesma coisa a partir do id (para quem está fora da transação, como as ferramentas da IA). */
+    @Transactional(readOnly = true)
+    public List<String> avisosDePacote(Long agendamentoId) {
+        return avisosDePacote(buscarPorId(agendamentoId));
+    }
+
+    /** Resposta de criação: igual à resposta normal, mais os avisos de pacote. */
+    public AgendamentoResponseDTO toResponseDTOComAvisos(Agendamento agendamento) {
+        AgendamentoResponseDTO dto = toResponseDTO(agendamento);
+        dto.setAvisos(avisosDePacote(agendamento));
+        return dto;
     }
 
     private Agendamento buscarPorId(Long id) {

@@ -1,7 +1,10 @@
 package com.onePilates.agendamento.auth.security;
 
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
+import com.onePilates.agendamento.model.Aluno;
 import com.onePilates.agendamento.model.Funcionario;
+import com.onePilates.agendamento.model.enums.Role;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -21,10 +24,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
     private final FuncionarioRepository funcionarioRepository;
+    private final AlunoRepository alunoRepository;
 
     public JwtAuthFilter(JwtUtil jwtUtil, FuncionarioRepository funcionarioRepository) {
+        this(jwtUtil, funcionarioRepository, null);
+    }
+
+    public JwtAuthFilter(JwtUtil jwtUtil, FuncionarioRepository funcionarioRepository, AlunoRepository alunoRepository) {
         this.jwtUtil = jwtUtil;
         this.funcionarioRepository = funcionarioRepository;
+        this.alunoRepository = alunoRepository;
     }
 
     @Override
@@ -51,18 +60,28 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 return;
             }
 
-            Funcionario funcionario = funcionarioRepository.findByEmail(email).orElse(null);
-            if (funcionario == null) {
+            String role = jwtUtil.extractRole(token);
+
+            // Token de aluno: o usuário vem da tabela de alunos, nunca de funcionários
+            boolean tokenDeAluno = Role.ALUNO.name().equals(role);
+            String emailAutenticado;
+            if (tokenDeAluno) {
+                Aluno aluno = alunoRepository == null ? null : alunoRepository.findByEmail(email).orElse(null);
+                emailAutenticado = aluno == null ? null : aluno.getEmail();
+            } else {
+                Funcionario funcionario = funcionarioRepository.findByEmail(email).orElse(null);
+                emailAutenticado = funcionario == null ? null : funcionario.getEmail();
+            }
+            if (emailAutenticado == null) {
                 filterChain.doFilter(request, response);
                 return;
             }
 
-            String role = jwtUtil.extractRole(token);
             List<SimpleGrantedAuthority> authorities =
                     List.of(new SimpleGrantedAuthority(role));
 
             UsernamePasswordAuthenticationToken auth =
-                    new UsernamePasswordAuthenticationToken(funcionario.getEmail(), null, authorities);
+                    new UsernamePasswordAuthenticationToken(emailAutenticado, null, authorities);
 
             SecurityContextHolder.getContext().setAuthentication(auth);
 

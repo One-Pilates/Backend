@@ -79,7 +79,7 @@ class AgendamentoControllerTest {
         agendamento.setId(1L);
 
         when(agendamentoService.criarAgendamento(any(AgendamentoDTO.class))).thenReturn(agendamento);
-        when(agendamentoService.toResponseDTO(any(Agendamento.class))).thenReturn(responseDTO);
+        when(agendamentoService.toResponseDTOComAvisos(any(Agendamento.class))).thenReturn(responseDTO);
 
         mockMvc.perform(post("/api/agendamentos")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -97,7 +97,7 @@ class AgendamentoControllerTest {
         agendamento.setId(1L);
 
         when(agendamentoService.criarAgendamento(any(AgendamentoDTO.class))).thenReturn(agendamento);
-        when(agendamentoService.toResponseDTO(any(Agendamento.class))).thenReturn(responseDTO);
+        when(agendamentoService.toResponseDTOComAvisos(any(Agendamento.class))).thenReturn(responseDTO);
 
         mockMvc.perform(post("/api/agendamentos")
                         .contentType(MediaType.APPLICATION_JSON)

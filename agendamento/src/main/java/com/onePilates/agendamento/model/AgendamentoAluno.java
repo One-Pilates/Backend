@@ -30,7 +30,47 @@ public class AgendamentoAluno {
 
     private String observacao;
 
+    /** O aluno confirmou, pelo portal, que vai comparecer. Não é a chamada do professor. */
+    private Boolean presencaConfirmada;
+
+    private LocalDateTime dataConfirmacao;
+
+    /** Quando o e-mail de lembrete (48h) foi enviado; evita reenvio. */
+    private LocalDateTime lembreteEnviadoEm;
+
+    /** Este vínculo consumiu 1 aula do pacote. Vínculos antigos (nulo) nunca devolvem aula. */
+    private Boolean creditoDebitado;
+
     public AgendamentoAluno() {
+    }
+
+    public boolean isPresencaConfirmada() {
+        return Boolean.TRUE.equals(presencaConfirmada);
+    }
+
+    public void confirmarPresenca() {
+        this.presencaConfirmada = true;
+        this.dataConfirmacao = LocalDateTime.now();
+    }
+
+    public LocalDateTime getDataConfirmacao() {
+        return dataConfirmacao;
+    }
+
+    public LocalDateTime getLembreteEnviadoEm() {
+        return lembreteEnviadoEm;
+    }
+
+    public void setLembreteEnviadoEm(LocalDateTime lembreteEnviadoEm) {
+        this.lembreteEnviadoEm = lembreteEnviadoEm;
+    }
+
+    public boolean isCreditoDebitado() {
+        return Boolean.TRUE.equals(creditoDebitado);
+    }
+
+    public void setCreditoDebitado(boolean creditoDebitado) {
+        this.creditoDebitado = creditoDebitado;
     }
 
     public AgendamentoAluno(Agendamento agendamento, Aluno aluno) {

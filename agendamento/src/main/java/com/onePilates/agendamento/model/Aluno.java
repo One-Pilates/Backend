@@ -2,6 +2,7 @@ package com.onePilates.agendamento.model;
 
 import jakarta.persistence.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 @Entity
 public class Aluno {
@@ -34,9 +35,48 @@ public class Aluno {
     @JoinColumn(name = "endereco_id")
     private Endereco endereco;
 
+    /** Hash BCrypt da senha de acesso ao portal do aluno. Nulo para alunos criados antes do portal. */
+    private String senha;
 
+    private Boolean primeiroAcesso;
+
+    private String codigoVerificacao;
+
+    private LocalDateTime dataUltimaCriacaoCodigo;
 
     public Aluno() {
+    }
+
+    public String getSenha() {
+        return senha;
+    }
+
+    public void setSenha(String senha) {
+        this.senha = senha;
+    }
+
+    public Boolean getPrimeiroAcesso() {
+        return primeiroAcesso;
+    }
+
+    public void setPrimeiroAcesso(Boolean primeiroAcesso) {
+        this.primeiroAcesso = primeiroAcesso;
+    }
+
+    public String getCodigoVerificacao() {
+        return codigoVerificacao;
+    }
+
+    public void setCodigoVerificacao(String codigoVerificacao) {
+        this.codigoVerificacao = codigoVerificacao;
+    }
+
+    public LocalDateTime getDataUltimaCriacaoCodigo() {
+        return dataUltimaCriacaoCodigo;
+    }
+
+    public void setDataUltimaCriacaoCodigo(LocalDateTime dataUltimaCriacaoCodigo) {
+        this.dataUltimaCriacaoCodigo = dataUltimaCriacaoCodigo;
     }
 
     public Long getId() {

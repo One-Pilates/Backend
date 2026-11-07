@@ -9,6 +9,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ApplicationContext;
 
+import java.io.File;
+
 @SpringBootApplication
 public class AgendamentoApplication {
 
@@ -17,9 +19,18 @@ public class AgendamentoApplication {
 
     private static final Dotenv DOTENV = carregarDotenv();
 
-    // O .env fica em agendamento/; aceita execução a partir dessa pasta ou da raiz do repositório
+        // Aceita execução a partir da pasta do serviço, de Backend ou da raiz do repositório.
     private static Dotenv carregarDotenv() {
-        String diretorio = new java.io.File(".env").exists() ? "./" : "./agendamento";
+                String[] diretorios = {"./", "./agendamento", "./Backend/agendamento"};
+
+                String diretorio = "./Backend/agendamento";
+                for (String candidato : diretorios) {
+                        if (new File(candidato, ".env").exists()) {
+                                diretorio = candidato;
+                                break;
+                        }
+                }
+
         return Dotenv.configure()
                 .directory(diretorio)
                 .ignoreIfMissing()

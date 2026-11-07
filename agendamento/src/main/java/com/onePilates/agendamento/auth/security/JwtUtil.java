@@ -1,6 +1,7 @@
 package com.onePilates.agendamento.auth.security;
 
 import com.onePilates.agendamento.model.Funcionario;
+import com.onePilates.agendamento.model.enums.Role;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +45,20 @@ public class JwtUtil {
         return Jwts.builder()
                 .setSubject(funcionario.getEmail())
                 .claim("role", funcionario.getRole().name())
+                .setIssuedAt(now)
+                .setExpiration(expiry)
+                .signWith(getSigningKey(), SignatureAlgorithm.HS256)
+                .compact();
+    }
+
+    /** Token para quem não é funcionário (o aluno): mesmo formato, com e-mail e perfil informados. */
+    public String generateToken(String email, Role role) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + expirationMs);
+
+        return Jwts.builder()
+                .setSubject(email)
+                .claim("role", role.name())
                 .setIssuedAt(now)
                 .setExpiration(expiry)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS256)

@@ -1,8 +1,10 @@
 package com.onePilates.agendamento.config;
 
+import com.onePilates.agendamento.aluno.repository.AlunoRepository;
 import com.onePilates.agendamento.auth.security.JwtAuthFilter;
 import com.onePilates.agendamento.auth.security.JwtUtil;
 import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -24,10 +26,17 @@ public class SecurityConfig {
 
     private final JwtUtil jwtUtil;
     private final FuncionarioRepository funcionarioRepository;
+    private final AlunoRepository alunoRepository;
 
     public SecurityConfig(JwtUtil jwtUtil, FuncionarioRepository funcionarioRepository) {
+        this(jwtUtil, funcionarioRepository, null);
+    }
+
+    @Autowired
+    public SecurityConfig(JwtUtil jwtUtil, FuncionarioRepository funcionarioRepository, AlunoRepository alunoRepository) {
         this.jwtUtil = jwtUtil;
         this.funcionarioRepository = funcionarioRepository;
+        this.alunoRepository = alunoRepository;
     }
 
     @Bean
@@ -37,7 +46,7 @@ public class SecurityConfig {
 
     @Bean
     public JwtAuthFilter jwtAuthFilter() {
-        return new JwtAuthFilter(jwtUtil, funcionarioRepository);
+        return new JwtAuthFilter(jwtUtil, funcionarioRepository, alunoRepository);
     }
 
     @Bean

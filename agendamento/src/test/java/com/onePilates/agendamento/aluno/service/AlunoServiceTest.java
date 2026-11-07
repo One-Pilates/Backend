@@ -3,10 +3,22 @@ package com.onePilates.agendamento.aluno.service;
 import com.onePilates.agendamento.aluno.dto.AlunoDTO;
 import com.onePilates.agendamento.aluno.dto.AlunoResponseDTO;
 import com.onePilates.agendamento.aluno.repository.AlunoRepository;
+import com.onePilates.agendamento.aluno.repository.CancelamentoAulaRepository;
+import com.onePilates.agendamento.email.dto.EmailRequestDTO;
+import com.onePilates.agendamento.email.dto.PrimeiroAcessoEmailDTO;
+import com.onePilates.agendamento.email.service.RabbitMQProducer;
 import com.onePilates.agendamento.endereco.dto.EnderecoDTO;
+import com.onePilates.agendamento.exception.CampoObrigatorioException;
+import com.onePilates.agendamento.exception.EmailJaCadastradoException;
 import com.onePilates.agendamento.exception.EntidadeNaoEncontradaException;
+import com.onePilates.agendamento.funcionario.repository.FuncionarioRepository;
+import com.onePilates.agendamento.model.Administrador;
 import com.onePilates.agendamento.model.Aluno;
 import com.onePilates.agendamento.model.Endereco;
+import com.onePilates.agendamento.model.enums.TipoEmail;
+import com.onePilates.agendamento.pacote.service.PacoteAulaService;
+import org.mockito.ArgumentCaptor;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,6 +41,21 @@ class AlunoServiceTest {
     @Mock
     private AlunoRepository alunoRepository;
 
+    @Mock
+    private FuncionarioRepository funcionarioRepository;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
+
+    @Mock
+    private RabbitMQProducer rabbitMQ;
+
+    @Mock
+    private PacoteAulaService pacoteService;
+
+    @Mock
+    private CancelamentoAulaRepository cancelamentoRepository;
+
     @InjectMocks
     private AlunoService alunoService;
 
@@ -46,6 +73,7 @@ class AlunoServiceTest {
         dto.setStatus(true);
         dto.setAlunoComLimitacoesFisicas(false);
         dto.setNotificacaoAtiva(true);
+        dto.setSenha("123456");
 
         EnderecoDTO enderecoDTO = new EnderecoDTO();
         enderecoDTO.setRua("Rua Teste");
@@ -80,13 +108,85 @@ class AlunoServiceTest {
 
     @Test
     void criarAluno_DeveCriarComSucesso() {
-        when(alunoRepository.save(any(Aluno.class))).thenReturn(aluno);
+        when(passwordEncoder.encode("123456")).thenReturn("hash-bcrypt");
+        when(alunoRepository.save(any(Aluno.class))).thenAnswer(inv -> {
+            Aluno salvo = inv.getArgument(0);
+            salvo.setId(1L);
+            return salvo;
+        });
 
         Aluno result = alunoService.criarAluno(dto);
 
         assertNotNull(result);
         assertEquals("Aluno Teste", result.getNome());
         verify(alunoRepository).save(any(Aluno.class));
+    }
+
+    @Test
+    void criarAluno_DeveGravarSenhaCodificadaEMarcarPrimeiroAcesso() {
+        when(passwordEncoder.encode("123456")).thenReturn("hash-bcrypt");
+        when(alunoRepository.save(any(Aluno.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        Aluno result = alunoService.criarAluno(dto);
+
+        assertEquals("hash-bcrypt", result.getSenha());
+        assertNotEquals("123456", result.getSenha());
+        assertTrue(result.getPrimeiroAcesso());
+    }
+
+    @Test
+    void criarAluno_DeveEnviarEmailDePrimeiroAcessoComASenhaTemporaria() {
+        when(passwordEncoder.encode("123456")).thenReturn("hash-bcrypt");
+        when(alunoRepository.save(any(Aluno.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        alunoService.criarAluno(dto);
+
+        ArgumentCaptor<EmailRequestDTO> captor = ArgumentCaptor.forClass(EmailRequestDTO.class);
+        verify(rabbitMQ).enviarPraFilaDeEmails(captor.capture());
+        EmailRequestDTO email = captor.getValue();
+        assertEquals(TipoEmail.PRIMEIRO_ACESSO, email.getTypeEmail());
+        assertEquals("aluno@teste.com", email.getDestinatario());
+        PrimeiroAcessoEmailDTO payload = (PrimeiroAcessoEmailDTO) email.getPayload();
+        assertEquals("123456", payload.getSenhaTemporaria());
+        assertEquals("Aluno Teste", payload.getNomeFuncionario());
+    }
+
+    @Test
+    void criarAluno_DeveExigirSenha() {
+        dto.setSenha(" ");
+
+        assertThrows(CampoObrigatorioException.class, () -> alunoService.criarAluno(dto));
+
+        verify(alunoRepository, never()).save(any());
+        verify(rabbitMQ, never()).enviarPraFilaDeEmails(any());
+    }
+
+    @Test
+    void criarAluno_DeveExigirEmailPorqueEleEOLogin() {
+        dto.setEmail(null);
+
+        assertThrows(CampoObrigatorioException.class, () -> alunoService.criarAluno(dto));
+
+        verify(alunoRepository, never()).save(any());
+    }
+
+    @Test
+    void criarAluno_DeveRecusarEmailJaUsadoPorOutroAluno() {
+        when(alunoRepository.existsByEmail("aluno@teste.com")).thenReturn(true);
+
+        assertThrows(EmailJaCadastradoException.class, () -> alunoService.criarAluno(dto));
+
+        verify(alunoRepository, never()).save(any());
+        verify(rabbitMQ, never()).enviarPraFilaDeEmails(any());
+    }
+
+    @Test
+    void criarAluno_DeveRecusarEmailJaUsadoPorFuncionario() {
+        when(funcionarioRepository.findByEmail("aluno@teste.com")).thenReturn(Optional.of(new Administrador()));
+
+        assertThrows(EmailJaCadastradoException.class, () -> alunoService.criarAluno(dto));
+
+        verify(alunoRepository, never()).save(any());
     }
 
     @Test
@@ -189,6 +289,8 @@ class AlunoServiceTest {
         alunoService.excluirAluno(1L);
 
         verify(alunoRepository).existsById(1L);
+        verify(pacoteService).removerDadosDoAluno(1L);
+        verify(cancelamentoRepository).deleteByAlunoId(1L);
         verify(alunoRepository).deleteById(1L);
     }
 

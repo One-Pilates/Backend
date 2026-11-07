@@ -3,6 +3,8 @@ package com.onePilates.agendamento.agendamento.dto;
 import com.onePilates.agendamento.aluno.dto.AlunoAgendamentoResponseDTO;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 public class AgendamentoResponseDTO {
@@ -23,6 +25,17 @@ public class AgendamentoResponseDTO {
     }
 
     public AgendamentoResponseDTO() {
+    }
+
+    /** Avisos não bloqueantes, por exemplo alunos além do pacote de aulas. */
+    private List<String> avisos = new ArrayList<>();
+
+    public List<String> getAvisos() {
+        return avisos;
+    }
+
+    public void setAvisos(List<String> avisos) {
+        this.avisos = avisos;
     }
 
     public Long getId() {
