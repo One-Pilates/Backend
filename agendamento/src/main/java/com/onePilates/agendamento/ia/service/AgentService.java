@@ -26,7 +26,7 @@ import java.util.Map;
 public class AgentService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentService.class);
-    private static final int MAX_PASSOS = 8;
+    private static final int MAX_PASSOS = 12;
     /** Folga para modelos de raciocínio: parte do limite é gasta "pensando" antes do texto da resposta. */
     private static final int MAX_TOKENS_RESPOSTA = 2000;
     private static final int TAMANHO_LOG = 300;
