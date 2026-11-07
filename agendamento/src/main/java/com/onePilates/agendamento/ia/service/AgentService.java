@@ -117,9 +117,13 @@ public class AgentService {
         for (int passo = 1; passo <= MAX_PASSOS; passo++) {
             log.info("[IA][agente] Passo {}/{}: consultando o modelo...", passo, MAX_PASSOS);
             Map<String, Object> resposta;
+            // a chamada ao modelo é a parte lenta: vira um passo visível enquanto espera
+            Long acaoModelo = progresso.iniciar(passo == 1 ? "Analisando o seu pedido" : "Analisando os resultados");
             try {
                 resposta = groqClient.chatComTools(mensagens, definicoes, 0.1, MAX_TOKENS_RESPOSTA);
+                progresso.finalizar(acaoModelo, true);
             } catch (RuntimeException e) {
+                progresso.finalizar(acaoModelo, false);
                 log.error("[IA][agente] Passo {}: falha ao consultar o modelo: {}", passo, resumir(e.getMessage()));
                 if (acoesConcluidas.isEmpty()) {
                     throw e;
