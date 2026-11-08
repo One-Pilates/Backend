@@ -28,6 +28,27 @@
 	</scm>
 	<properties>
 		<java.version>21</java.version>
+		<!-- SonarQube / SonarCloud Configuration -->
+		<sonar.projectKey>OnePilates_Backend</sonar.projectKey>
+		<sonar.projectName>OnePilates Backend - Agendamento</sonar.projectName>
+		<sonar.host.url>http://localhost:9000</sonar.host.url>
+		<sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
+		<sonar.coverage.jacoco.xmlReportPaths>${project.basedir}/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+		<sonar.coverage.exclusions>
+			**/dto/**,
+			**/entity/**,
+			**/model/**,
+			**/config/**,
+			**/exception/**,
+			**/enums/**,
+			**/AgendamentoApplication.java
+		</sonar.coverage.exclusions>
+		<sonar.exclusions>
+			**/target/**,
+			**/*.xml,
+			**/*.yml,
+			**/*.yaml
+		</sonar.exclusions>
 	</properties>
 	<dependencies>
 		<dependency>
@@ -130,6 +151,12 @@
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>
+			</plugin>
+			<!-- Plugin SonarQube Scanner -->
+			<plugin>
+				<groupId>org.sonarsource.scanner.maven</groupId>
+				<artifactId>sonar-maven-plugin</artifactId>
+				<version>5.0.0.4389</version>
 			</plugin>
             <!-- Plugin JaCoCo para Cobertura de Código -->
             <plugin>
